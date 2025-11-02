@@ -14,7 +14,7 @@ export type ProviderRow = {
   state: string | null;
   phone: string | null;
 
-  // keep taxonomy_desc if你还想展示旧的职业/资质描述
+  // keep taxonomy_desc if
   taxonomy_desc: string | null;
 
   // NEW: single string (comma-joined specialties)
