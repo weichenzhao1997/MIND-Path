@@ -154,6 +154,12 @@ export default function LoginScreen() {
             </View>
           </View>
 
+          {!!error && (
+            <View style={styles.errorBanner} accessibilityLiveRegion="polite">
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
+
           <Pressable
             style={[styles.loginBtn, submitting && styles.loginBtnDisabled]}
             onPress={handleLogin}
@@ -173,11 +179,6 @@ export default function LoginScreen() {
             <Text style={styles.footerLink}>Create an account</Text>
           </Pressable>
         </View>
-        {!!error && (
-          <Text style={styles.errorText} accessibilityLiveRegion="polite">
-            {error}
-          </Text>
-        )}
       </ScrollView>
       {submitting ? (
         <View style={styles.loadingOverlay} pointerEvents="auto">
@@ -326,12 +327,21 @@ const styles = StyleSheet.create({
     color: GREEN_TEXT,
     fontWeight: "700",
   },
+  errorBanner: {
+    backgroundColor: "#fee2e2",
+    borderColor: "#fca5a5",
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginTop: 6,
+    marginBottom: 12,
+  },
   errorText: {
-    marginTop: 16,
-    textAlign: "center",
     color: ERROR_TEXT,
     fontSize: 13,
     fontWeight: "600",
+    textAlign: "center",
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,

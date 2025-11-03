@@ -159,7 +159,7 @@ export default function CreateAccountScreen() {
           <Pressable
             accessibilityRole="button"
             style={{ alignSelf: "center" }}
-            onPress={() => router.back()}
+            onPress={() => router.replace("/(tabs)/login")}
           >
             <Text style={styles.linkText}>Already have an account? Sign in</Text>
           </Pressable>
