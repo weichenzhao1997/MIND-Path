@@ -23,7 +23,7 @@ export default function ResourcesSwitch() {
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Option A — Symptom search (Supabase)</Text>
-          <Text style={styles.cardDesc}>输入症状关键词（anxiety / ocd / adhd）。</Text>
+          <Text style={styles.cardDesc}>Enter symptom keywords (anxiety / ocd / adhd).</Text>
           <Pressable
             onPress={() => router.push("/(tabs)/resourcesContent")}
             style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
@@ -34,7 +34,7 @@ export default function ResourcesSwitch() {
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Option B — Provider finder (Geo-aware)</Text>
-          <Text style={styles.cardDesc}>按城市/州/专长搜索，支持距离排序与分页。</Text>
+          <Text style={styles.cardDesc}>Search by city/state/specialty, with distance sorting and pagination.</Text>
           <Pressable
             onPress={() => router.push("/(tabs)/resourcesProvider")}
             style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
