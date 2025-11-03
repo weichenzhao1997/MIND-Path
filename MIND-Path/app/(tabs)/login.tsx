@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   View,
   Text,
   TextInput,
@@ -8,7 +9,7 @@ import {
   ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useSegments } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
 
 /** ---------- Theme colors ---------- */
@@ -22,11 +23,16 @@ const ERROR_TEXT = "#dc2626";
 export default function LoginScreen() {
   const { logIn, profile, isLoggedIn } = useAuth();
   const router = useRouter();
+  const segments = useSegments();
+
+  const inProfileTab =
+    segments.length >= 2 && segments[0] === "(tabs)" && segments[1] === "profile";
 
   const [username, setUsername] = useState(profile?.username ?? "");
   const [password, setPassword] = useState("");
   const [secureEntry, setSecureEntry] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -36,7 +42,9 @@ export default function LoginScreen() {
 
   useEffect(() => {
     if (isLoggedIn) {
-      router.replace("/(tabs)/profile");
+      if (!inProfileTab) {
+        router.replace("/(tabs)/profile");
+      }
     }
   }, [isLoggedIn, router]);
 
@@ -54,6 +62,8 @@ export default function LoginScreen() {
 
     if (!trimmedUsername || !trimmedPassword) return;
 
+    setSubmitting(true);
+
     try {
       const success = await logIn({
         username: trimmedUsername,
@@ -69,6 +79,8 @@ export default function LoginScreen() {
     } catch (error) {
       console.warn("Failed to sign in", error);
       setError("Something went wrong while signing in. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -130,9 +142,10 @@ export default function LoginScreen() {
           </View>
 
           <Pressable
-            style={styles.loginBtn}
+            style={[styles.loginBtn, submitting && styles.loginBtnDisabled]}
             onPress={handleLogin}
             accessibilityRole="button"
+            disabled={submitting}
           >
             <Text style={styles.loginBtnText}>Log in</Text>
           </Pressable>
@@ -153,6 +166,14 @@ export default function LoginScreen() {
           </Text>
         )}
       </ScrollView>
+      {submitting ? (
+        <View style={styles.loadingOverlay} pointerEvents="auto">
+          <View style={styles.loadingCard}>
+            <ActivityIndicator size="large" color={GREEN_MAIN} />
+            <Text style={styles.loadingText}>Signing you in…</Text>
+          </View>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -263,6 +284,9 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 14,
   },
+  loginBtnDisabled: {
+    opacity: 0.6,
+  },
   loginBtnText: {
     color: "#ffffff",
     fontSize: 15,
@@ -294,6 +318,31 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: ERROR_TEXT,
     fontSize: 13,
+    fontWeight: "600",
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(15,23,42,0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+  loadingCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
+    paddingVertical: 28,
+    paddingHorizontal: 32,
+    alignItems: "center",
+    gap: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 6,
+  },
+  loadingText: {
+    fontSize: 15,
+    color: GREEN_TEXT,
     fontWeight: "600",
   },
 });

@@ -19,10 +19,11 @@ import {
   hexToBytes,
   utf8ToBytes,
 } from "@noble/hashes/utils";
+import { Platform } from "react-native";
 
 const PROFILE_KEY = "mind_path_user_profile";
-const PBKDF2_ITERATIONS = 150_000;
-const PBKDF2_ASYNC_TICK = 1_000;
+const PBKDF2_ITERATIONS = Platform.OS === "web" ? 80_000 : 120_000;
+const PBKDF2_ASYNC_TICK = Platform.OS === "web" ? 250 : 750;
 const KEY_LENGTH = 32;
 const SALT_LENGTH = 16;
 const NONCE_LENGTH = 24;
