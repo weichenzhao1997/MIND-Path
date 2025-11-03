@@ -52,6 +52,9 @@ export default function TabsLayout() {
           headerShown: false,
         }}
       />
+
+      <Tabs.Screen name="resourcesContent"  options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="resourcesProvider" options={{ href: null, headerShown: false }} />
     </Tabs>
   );
 }

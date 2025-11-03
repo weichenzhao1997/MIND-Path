@@ -1,5 +1,28 @@
-// utils/db.ts
-import { supabase } from './supabase';
+// utils/supabaseProvider.ts
+import { createClient } from "@supabase/supabase-js";
+
+/* =========================================================
+ * Provider-side Supabase client (aside of Content)
+ * =======================================================*/
+const providerUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const providerAnon = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!providerUrl || !providerAnon) {
+  const msg =
+    "Missing Provider Supabase ENV. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY, then run `npx expo start -c`.";
+  console.error(msg, {
+    providerUrl,
+    providerAnonPresent: !!providerAnon,
+  });
+  throw new Error(msg);
+}
+if (!/^https:\/\//i.test(providerUrl)) {
+  throw new Error(`Supabase URL must start with https:// (got: ${providerUrl})`);
+}
+
+export const supabaseProvider = createClient(providerUrl, providerAnon, {
+  auth: { persistSession: false },
+});
 
 /* =========================================================
  * Types
@@ -77,7 +100,7 @@ async function getZipCentroid(zip: string): Promise<{ lat: number; lng: number }
   if (!z) return null;
 
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseProvider
       .rpc('zip_centroid', { p_zip: z })
       .single<PointRow>();
     if (error && (error as any).code !== 'PGRST116') throw error;
@@ -87,7 +110,7 @@ async function getZipCentroid(zip: string): Promise<{ lat: number; lng: number }
   }
 
   const addr_key = ['', '', '', z, 'USA'].join(', ').toUpperCase();
-  const { data, error } = await supabase
+  const { data, error } = await supabaseProvider
     .from('geocode_cache')
     .select('lat,lng')
     .eq('addr_key', addr_key)
@@ -108,7 +131,7 @@ async function getCityStateCentroid(
   if (!c || !s) return null;
 
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseProvider
       .rpc('city_state_centroid', { p_city: c, p_state: s })
       .single<PointRow>();
     if (error && (error as any).code !== 'PGRST116') throw error;
@@ -132,7 +155,7 @@ export async function searchProvidersPaged(
   const q         = params.q?.trim();
   const specialty = params.specialty?.trim();
 
-  let query = supabase
+  let query = supabaseProvider
     .from('provider_search_mh_view')
     .select('*', { count: 'exact' });
 
@@ -161,7 +184,7 @@ export async function fetchNearbyProviders(
   lng: number,
   radiusMeters = 16093 // 10 miles
 ): Promise<NearbyRow[]> {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseProvider
     .rpc('nearby_providers', { p_lat: lat, p_lng: lng, p_radius_m: radiusMeters })
     .returns<NearbyRow[]>();
   if (error) throw error;
