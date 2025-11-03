@@ -36,7 +36,6 @@ const useAuthMock = useAuth as jest.Mock;
 
 const mockProfile = {
   username: "joey",
-  password: "secret",
   zipcode: "90210",
   previousChatSessionIds: ["chat-1", "chat-2"],
   recommendedResourceIds: ["res-1"],

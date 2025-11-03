@@ -24,14 +24,13 @@ export default function LoginScreen() {
   const router = useRouter();
 
   const [username, setUsername] = useState(profile?.username ?? "");
-  const [password, setPassword] = useState(profile?.password ?? "");
+  const [password, setPassword] = useState("");
   const [secureEntry, setSecureEntry] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (profile) {
       setUsername(profile.username);
-      setPassword(profile.password);
     }
   }, [profile]);
 
