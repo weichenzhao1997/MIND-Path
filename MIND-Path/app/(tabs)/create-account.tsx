@@ -45,7 +45,11 @@ export default function CreateAccountScreen() {
 
     setSubmitting(true);
 
+    let shouldResetSubmitting = true;
+
     try {
+      await new Promise(resolve => setTimeout(resolve, 16));
+
       await createAccount({
         username: trimmedUsername,
         password: trimmedPassword,
@@ -54,11 +58,14 @@ export default function CreateAccountScreen() {
         recommendedResourceIds: [],
         clinicIds: [],
       });
+      shouldResetSubmitting = false;
       router.replace("/(tabs)/login");
     } catch (error) {
       console.warn("Failed to create account", error);
     } finally {
-      setSubmitting(false);
+      if (shouldResetSubmitting) {
+        setSubmitting(false);
+      }
     }
   };
 

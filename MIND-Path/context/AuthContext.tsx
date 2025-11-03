@@ -21,9 +21,9 @@ import {
 } from "@noble/hashes/utils";
 import { Platform } from "react-native";
 
-const PROFILE_KEY = "mind_path_user_profile";
-const PBKDF2_ITERATIONS = Platform.OS === "web" ? 80_000 : 120_000;
-const PBKDF2_ASYNC_TICK = Platform.OS === "web" ? 250 : 750;
+const PROFILE_STORAGE_KEY = "mind_path_user_profile";
+const PBKDF2_ITERATIONS = Platform.OS === "web" ? 120_000 : 20_000;
+const PBKDF2_ASYNC_TICK = Platform.OS === "web" ? 200 : 400;
 const KEY_LENGTH = 32;
 const SALT_LENGTH = 16;
 const NONCE_LENGTH = 24;
@@ -293,7 +293,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const useSecureStore = await ensureSecureStoreAvailability();
     if (useSecureStore) {
       try {
-        const value = await SecureStore.getItemAsync(PROFILE_KEY);
+        const value = await SecureStore.getItemAsync(PROFILE_STORAGE_KEY);
         if (value !== null) {
           fallbackStorageRef.current = value;
         }
@@ -306,7 +306,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const browserStorage = getBrowserStorage();
     if (browserStorage) {
       try {
-        const value = browserStorage.getItem(PROFILE_KEY);
+        const value = browserStorage.getItem(PROFILE_STORAGE_KEY);
         if (value !== null) {
           fallbackStorageRef.current = value;
         }
@@ -327,7 +327,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const useSecureStore = await ensureSecureStoreAvailability();
       if (useSecureStore) {
         try {
-          await SecureStore.setItemAsync(PROFILE_KEY, payload);
+          await SecureStore.setItemAsync(PROFILE_STORAGE_KEY, payload);
           return;
         } catch (error) {
           console.warn("Failed to persist encrypted user profile", error);
@@ -337,7 +337,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const browserStorage = getBrowserStorage();
       if (browserStorage) {
         try {
-          browserStorage.setItem(PROFILE_KEY, payload);
+          browserStorage.setItem(PROFILE_STORAGE_KEY, payload);
           return;
         } catch (error) {
           console.warn("Failed to persist encrypted profile to browser storage", error);

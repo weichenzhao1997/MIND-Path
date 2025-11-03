@@ -64,7 +64,11 @@ export default function LoginScreen() {
 
     setSubmitting(true);
 
+    let shouldResetSubmitting = true;
+
     try {
+      await new Promise(resolve => setTimeout(resolve, 16));
+
       const success = await logIn({
         username: trimmedUsername,
         password: trimmedPassword,
@@ -75,12 +79,21 @@ export default function LoginScreen() {
         return;
       }
 
+      if (inProfileTab) {
+        shouldResetSubmitting = false;
+        setSubmitting(false);
+        return;
+      }
+
+      shouldResetSubmitting = false;
       router.replace("/(tabs)/profile");
     } catch (error) {
       console.warn("Failed to sign in", error);
       setError("Something went wrong while signing in. Please try again.");
     } finally {
-      setSubmitting(false);
+      if (shouldResetSubmitting) {
+        setSubmitting(false);
+      }
     }
   };
 
