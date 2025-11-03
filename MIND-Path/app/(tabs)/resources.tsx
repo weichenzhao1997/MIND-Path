@@ -20,12 +20,12 @@ export default function ResourcesSwitch() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: G_BG }}>
       <View style={styles.container}>
-        <Text style={styles.title}>Pick a Resources UI</Text>
+        <Text style={styles.title}>Pick a Resources tool</Text>
         <Text style={styles.subtitle}>You can switch between two implementations.</Text>
 
         {/* Option A - Symptom search */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Option A — Symptom search (Supabase)</Text>
+          <Text style={styles.cardTitle}>Option A — Symptom search</Text>
           <Text style={styles.cardDesc}>Enter symptom keywords (e.g. anxiety / OCD / ADHD).</Text>
 
           <Pressable
@@ -39,7 +39,7 @@ export default function ResourcesSwitch() {
 
         {/* Option B - Provider finder */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Option B — Provider finder (Geo-aware)</Text>
+          <Text style={styles.cardTitle}>Option B — Provider finder</Text>
           <Text style={styles.cardDesc}>Search by city/state/specialty. Includes distance ranking and pagination.</Text>
 
           <Pressable

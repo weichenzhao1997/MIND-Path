@@ -74,8 +74,8 @@ export default function ResourcesContent() {
 
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Search Providers</Text>
-        <Text style={styles.headerSub}>Find clinics and professionals near you</Text>
+        <Text style={styles.headerTitle}>Search by Symptom</Text>
+        <Text style={styles.headerSub}>Enter your symptoms to get relevant educational materials.</Text>
       </View>
 
       {/* Search Card */}
