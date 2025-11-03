@@ -2,8 +2,9 @@
 import React from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { View, Text, Pressable, StyleSheet } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router"; // Import Href for typed navigation
 
+// Global design colors
 const G_BG = "#F5FAF7";
 const G_CARD = "#FFFFFF";
 const G_BORDER = "rgba(16,82,60,0.12)";
@@ -13,6 +14,7 @@ const G_PRIMARY = "#2F6F4E";
 const G_PRIMARY_WEAK = "#8DB7A4";
 
 export default function ResourcesSwitch() {
+  // Navigation hook for Expo Router
   const router = useRouter();
 
   return (
@@ -21,22 +23,28 @@ export default function ResourcesSwitch() {
         <Text style={styles.title}>Pick a Resources UI</Text>
         <Text style={styles.subtitle}>You can switch between two implementations.</Text>
 
+        {/* Option A - Symptom search */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Option A — Symptom search (Supabase)</Text>
-          <Text style={styles.cardDesc}>Enter symptom keywords (anxiety / ocd / adhd).</Text>
+          <Text style={styles.cardDesc}>Enter symptom keywords (e.g. anxiety / OCD / ADHD).</Text>
+
           <Pressable
-            onPress={() => router.push("/(tabs)/resourcesContent")}
+            // Navigate to Supabase search UI screen
+            onPress={() => router.push("/(tabs)/resourcesContent" as Href)}
             style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
           >
             <Text style={styles.buttonText}>Go to Choice 1</Text>
           </Pressable>
         </View>
 
+        {/* Option B - Provider finder */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Option B — Provider finder (Geo-aware)</Text>
-          <Text style={styles.cardDesc}>Search by city/state/specialty, with distance sorting and pagination.</Text>
+          <Text style={styles.cardDesc}>Search by city/state/specialty. Includes distance ranking and pagination.</Text>
+
           <Pressable
-            onPress={() => router.push("/(tabs)/resourcesProvider")}
+            // Navigate to provider search UI screen
+            onPress={() => router.push("/(tabs)/resourcesProvider" as Href)}
             style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
           >
             <Text style={styles.buttonText}>Go to Choice 2</Text>
@@ -67,8 +75,12 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 16, fontWeight: "800", color: G_TEXT },
   cardDesc: { marginTop: 6, color: G_MUTED },
   button: {
-    height: 44, borderRadius: 12, backgroundColor: G_PRIMARY,
-    alignItems: "center", justifyContent: "center", marginTop: 12,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: G_PRIMARY,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
   },
   buttonPressed: { backgroundColor: G_PRIMARY_WEAK },
   buttonText: { color: "#FFFFFF", fontWeight: "700", fontSize: 16 },
