@@ -102,13 +102,13 @@ describe("<CreateAccountScreen />", () => {
     expect(createAccountMock).not.toHaveBeenCalled();
   });
 
-  test("navigates back to sign in", () => {
+  test("redirects to sign in screen", () => {
     const { getByRole } = render(<CreateAccountScreen />);
 
     fireEvent.press(
       getByRole("button", { name: "Already have an account? Sign in" })
     );
 
-    expect(backMock).toHaveBeenCalled();
+    expect(replaceMock).toHaveBeenCalledWith("/(tabs)/login");
   });
 });

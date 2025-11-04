@@ -9,7 +9,7 @@ import {
 } from "@jest/globals";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import LoginScreen from "@/app/(tabs)/login";
-import { useRouter } from "expo-router";
+import { useRouter, useSegments } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
 
 jest.mock("react-native-safe-area-context", () => {
@@ -28,6 +28,7 @@ jest.mock("react-native-safe-area-context", () => {
 
 jest.mock("expo-router", () => ({
   useRouter: jest.fn(),
+  useSegments: jest.fn(),
 }));
 
 jest.mock("@/context/AuthContext", () => ({
@@ -35,6 +36,7 @@ jest.mock("@/context/AuthContext", () => ({
 }));
 
 const useRouterMock = useRouter as jest.Mock;
+const useSegmentsMock = useSegments as jest.Mock;
 const useAuthMock = useAuth as jest.Mock;
 
 describe("<LoginScreen />", () => {
@@ -48,6 +50,7 @@ describe("<LoginScreen />", () => {
       replace: replaceMock,
       push: pushMock,
     });
+    useSegmentsMock.mockReturnValue(["(tabs)", "login"]);
     useAuthMock.mockReturnValue({
       logIn: jest.fn(),
       profile: null,
@@ -57,6 +60,7 @@ describe("<LoginScreen />", () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    useSegmentsMock.mockReset();
   });
 
   test("submits trimmed credentials and navigates on success", async () => {

@@ -10,6 +10,7 @@ import {
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import ProfileScreen from "@/app/(tabs)/profile";
 import { useAuth } from "@/context/AuthContext";
+import { useSegments } from "expo-router";
 
 jest.mock("react-native-safe-area-context", () => {
   const actual = jest.requireActual("react-native-safe-area-context");
@@ -26,6 +27,7 @@ jest.mock("expo-router", () => ({
     replace: jest.fn(),
     push: jest.fn(),
   })),
+  useSegments: jest.fn(),
 }));
 
 jest.mock("@/context/AuthContext", () => ({
@@ -33,6 +35,7 @@ jest.mock("@/context/AuthContext", () => ({
 }));
 
 const useAuthMock = useAuth as jest.Mock;
+const useSegmentsMock = useSegments as jest.Mock;
 
 const mockProfile = {
   username: "joey",
@@ -56,12 +59,14 @@ describe("<ProfileScreen />", () => {
       logOut: logOutMock,
       updateProfile: updateProfileMock,
     });
+    useSegmentsMock.mockReturnValue(["(tabs)", "profile"]);
     consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
   });
 
   afterEach(() => {
     jest.clearAllMocks();
     consoleErrorSpy.mockRestore();
+    useSegmentsMock.mockReset();
   });
 
   test("shows profile data, including zipcode inline", async () => {
