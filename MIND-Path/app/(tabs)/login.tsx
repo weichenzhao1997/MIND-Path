@@ -37,11 +37,14 @@ export default function LoginScreen() {
   useEffect(() => {
     if (profile) {
       setUsername(profile.username);
+    } else {
+      setUsername("");
+      setPassword("");
     }
   }, [profile]);
 
   useEffect(() => {
-    if (isLoggedIn) {
+      if (isLoggedIn) {
       if (!inProfileTab) {
         router.replace("/(tabs)/profile");
       }
@@ -79,14 +82,12 @@ export default function LoginScreen() {
         return;
       }
 
-      if (inProfileTab) {
-        shouldResetSubmitting = false;
-        setSubmitting(false);
-        return;
-      }
-
+      setSubmitting(false);
       shouldResetSubmitting = false;
-      router.replace("/(tabs)/profile");
+
+      if (!inProfileTab) {
+        router.replace("/(tabs)/profile");
+      }
     } catch (error) {
       console.warn("Failed to sign in", error);
       setError("Something went wrong while signing in. Please try again.");
