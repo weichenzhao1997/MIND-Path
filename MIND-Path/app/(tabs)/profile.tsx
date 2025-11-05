@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Text,
   View,
@@ -6,10 +6,15 @@ import {
   ScrollView,
   StyleSheet,
   TextInput,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import LoginScreen from "./login";
+import {
+  fetchProvidersByIds,
+  type ProviderRow,
+} from "@/utils/supabaseProvider";
 
 /** ---------- Theme colors ---------- */
 const GREEN_MAIN = "#3F9360";
@@ -53,6 +58,55 @@ function ProfileContent() {
 
   const [editingZip, setEditingZip] = useState(false);
   const [pendingZip, setPendingZip] = useState(zipcode);
+
+  const clinicIdNumbers = useMemo(
+    () =>
+      clinicIds
+        .map(id => Number.parseInt(String(id), 10))
+        .filter(id => Number.isFinite(id)),
+    [clinicIds]
+  );
+
+  const [clinicRows, setClinicRows] = useState<ProviderRow[]>([]);
+  const [clinicLoading, setClinicLoading] = useState(false);
+  const [clinicError, setClinicError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (clinicIdNumbers.length === 0) {
+      setClinicRows([]);
+      setClinicError(null);
+      setClinicLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setClinicLoading(true);
+    setClinicError(null);
+
+    fetchProvidersByIds(clinicIdNumbers)
+      .then(rows => {
+        if (cancelled) return;
+        const rowMap = new Map(rows.map(row => [row.provider_id, row]));
+        const ordered = clinicIdNumbers
+          .map(id => rowMap.get(id))
+          .filter((row): row is ProviderRow => Boolean(row));
+        setClinicRows(ordered);
+      })
+      .catch(error => {
+        if (cancelled) return;
+        console.error("Failed to load saved clinics", error);
+        setClinicRows([]);
+        setClinicError(error?.message ?? String(error));
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setClinicLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicIdNumbers]);
 
   const beginEditingZip = useCallback(() => {
     setPendingZip(zipcode);
@@ -220,27 +274,62 @@ function ProfileContent() {
               Pin clinics you like and they will appear here for quick access.
             </Text>
           </View>
+        ) : clinicLoading ? (
+          <View style={[styles.clinicCard, styles.clinicStatusCard]}>
+            <ActivityIndicator color={GREEN_TEXT} />
+            <Text style={styles.clinicStatusText}>Loading saved clinics…</Text>
+          </View>
+        ) : clinicError ? (
+          <View style={[styles.clinicCard, styles.clinicStatusCard]}>
+            <Text style={styles.clinicErrorText}>
+              Unable to load saved clinics. {clinicError}
+            </Text>
+          </View>
+        ) : clinicRows.length === 0 ? (
+          <View style={styles.clinicCard}>
+            <Text style={styles.clinicTitle}>No clinic details found</Text>
+            <View style={styles.clinicDivider} />
+            <Text style={styles.clinicSubtitle}>
+              We could not find these providers in the MIND-Path directory. Try
+              saving them again from the resources tab.
+            </Text>
+          </View>
         ) : (
-          clinicIds.map(id => {
-            const isSelected = !!picked[id];
+          clinicRows.map(row => {
+            const key = row.provider_id.toString();
+            const isSelected = !!picked[key];
+            const locationLine = [row.city, row.state]
+              .filter(Boolean)
+              .join(", ");
             return (
               <View
-                key={id}
+                key={key}
                 style={[
                   styles.clinicCard,
                   isSelected && styles.clinicCardSelected,
                 ]}
               >
-                <Text style={styles.clinicTitle}>{id}</Text>
-                <View style={styles.clinicDivider} />
-                <Text style={styles.clinicSubtitle}>
-                  Saved from your resource recommendations. Tap when you are
-                  ready to schedule.
+                <Text style={styles.clinicTitle}>
+                  {row.basic_name ?? `Provider #${key}`}
                 </Text>
+                <View style={styles.clinicDivider} />
+                <View style={styles.clinicDetails}>
+                  {locationLine ? (
+                    <Text style={styles.clinicDetailText}>{locationLine}</Text>
+                  ) : null}
+                  {row.specialty ? (
+                    <Text style={styles.clinicDetailText}>{row.specialty}</Text>
+                  ) : null}
+                  {row.phone ? (
+                    <Text style={styles.clinicDetailText}>
+                      Phone: {row.phone}
+                    </Text>
+                  ) : null}
+                </View>
                 <Pressable
                   style={styles.apptBtn}
                   accessibilityRole="button"
-                  onPress={() => togglePick(id)}
+                  onPress={() => togglePick(key)}
                 >
                   <Text style={styles.apptBtnText}>Appointment time</Text>
                 </Pressable>
@@ -357,6 +446,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     marginBottom: 14,
   },
+  clinicStatusCard: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
   clinicCardSelected: {
     borderColor: GREEN_BORDER,
     borderWidth: 2,
@@ -376,6 +470,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#7a6f68",
     marginBottom: 12,
+  },
+  clinicStatusText: {
+    fontSize: 13,
+    color: "#7a6f68",
+    textAlign: "center",
+  },
+  clinicErrorText: {
+    fontSize: 13,
+    color: "#b91c1c",
+    textAlign: "center",
+  },
+  clinicDetails: {
+    gap: 4,
+    marginBottom: 12,
+  },
+  clinicDetailText: {
+    fontSize: 13,
+    color: "#5c4235",
   },
   apptBtn: {
     alignSelf: "flex-start",
