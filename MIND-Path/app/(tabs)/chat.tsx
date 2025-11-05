@@ -43,6 +43,16 @@ export default function ChatScreen() {
             text: "I will guide you through a few short questions to find the right type of support. Everything you tell me is confidential.",
           }
         ],
+      },
+      {
+        id: "welcome-3",
+        role: "assistant",
+        parts: [
+          {
+            type: "text",
+            text: "To start, would you like to share what's been on your mind lately?",
+          }
+        ],
       }
     ],
     
@@ -51,7 +61,6 @@ export default function ChatScreen() {
 
   if (error) return <Text>{error.message}</Text>;
   const isLoading = (status === "submitted")
- 
   return (
     <SafeAreaView style={{ flex: 1 }}>
       <KeyboardAvoidingView style={styles.chatWrap}
