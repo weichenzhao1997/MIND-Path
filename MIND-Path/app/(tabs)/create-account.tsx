@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   View,
   Text,
   TextInput,
@@ -26,6 +27,7 @@ export default function CreateAccountScreen() {
   const [password, setPassword] = useState("");
   const [zipcode, setZipcode] = useState("");
   const [secureEntry, setSecureEntry] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
@@ -41,7 +43,13 @@ export default function CreateAccountScreen() {
 
     if (!trimmedUsername || !trimmedPassword) return;
 
+    setSubmitting(true);
+
+    let shouldResetSubmitting = true;
+
     try {
+      await new Promise(resolve => setTimeout(resolve, 16));
+
       await createAccount({
         username: trimmedUsername,
         password: trimmedPassword,
@@ -50,9 +58,14 @@ export default function CreateAccountScreen() {
         recommendedResourceIds: [],
         clinicIds: [],
       });
+      shouldResetSubmitting = false;
       router.replace("/(tabs)/login");
     } catch (error) {
       console.warn("Failed to create account", error);
+    } finally {
+      if (shouldResetSubmitting) {
+        setSubmitting(false);
+      }
     }
   };
 
@@ -131,9 +144,14 @@ export default function CreateAccountScreen() {
           </View>
 
           <Pressable
-            style={[styles.loginBtn, { marginTop: 20 }]}
+            style={[
+              styles.loginBtn,
+              { marginTop: 20 },
+              submitting && styles.loginBtnDisabled,
+            ]}
             onPress={handleCreateAccount}
             accessibilityRole="button"
+            disabled={submitting}
           >
             <Text style={styles.loginBtnText}>Create account</Text>
           </Pressable>
@@ -141,12 +159,20 @@ export default function CreateAccountScreen() {
           <Pressable
             accessibilityRole="button"
             style={{ alignSelf: "center" }}
-            onPress={() => router.back()}
+            onPress={() => router.replace("/(tabs)/login")}
           >
             <Text style={styles.linkText}>Already have an account? Sign in</Text>
           </Pressable>
         </View>
       </ScrollView>
+      {submitting ? (
+        <View style={styles.loadingOverlay} pointerEvents="auto">
+          <View style={styles.loadingCard}>
+            <ActivityIndicator size="large" color={GREEN_MAIN} />
+            <Text style={styles.loadingText}>Creating your account…</Text>
+          </View>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -262,6 +288,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 14,
   },
+  loginBtnDisabled: {
+    opacity: 0.6,
+  },
   loginBtnText: {
     color: "#ffffff",
     fontSize: 15,
@@ -271,6 +300,31 @@ const styles = StyleSheet.create({
     color: GREEN_MAIN,
     textAlign: "center",
     fontSize: 13,
+    fontWeight: "600",
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(15,23,42,0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+  loadingCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
+    paddingVertical: 28,
+    paddingHorizontal: 32,
+    alignItems: "center",
+    gap: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 6,
+  },
+  loadingText: {
+    fontSize: 15,
+    color: GREEN_TEXT,
     fontWeight: "600",
   },
 });

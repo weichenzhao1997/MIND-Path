@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   Text,
   View,
@@ -54,11 +54,10 @@ function ProfileContent() {
   const [editingZip, setEditingZip] = useState(false);
   const [pendingZip, setPendingZip] = useState(zipcode);
 
-  useEffect(() => {
-    if (!editingZip) {
-      setPendingZip(zipcode);
-    }
-  }, [zipcode, editingZip]);
+  const beginEditingZip = useCallback(() => {
+    setPendingZip(zipcode);
+    setEditingZip(true);
+  }, [zipcode]);
 
   const handleZipSave = async () => {
     const trimmed = pendingZip.trim();
@@ -174,9 +173,9 @@ function ProfileContent() {
             <Text style={styles.nearbyChevron}> ▾ </Text>
             <Text style={styles.nearbyZip}> {zipcodeDisplay} </Text>
           </Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setEditingZip(true)}
+            <Pressable
+              accessibilityRole="button"
+              onPress={beginEditingZip}
             style={styles.zipEditIcon}
           >
             <Text style={styles.nearbyZip}>Edit</Text>
