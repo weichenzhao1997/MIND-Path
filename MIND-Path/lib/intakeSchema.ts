@@ -8,15 +8,15 @@ const trimmed = z.string().trim().min(1)
 
 export const standardIntakeSchema = z.object({
     schema_version: z.literal('1.0').default('1.0'),
-    primary_mood: trimmed.max(40)
-        .describe("The user's primary reported mood, e.g., 'anxious', 'depressed', 'stressed', 'sleep-deprived',  or 'okay', etc.."),
+    primary_concern: trimmed.max(40)
+        .describe("The user's primary reported concern, e.g., 'anxious', 'depressed', 'stressed', 'sleep-deprived',  or 'okay', etc.."),
 
     key_symptoms: z.array(trimmed.max(60)) //array of 1-12 specific symptoms (each <= 60 chars)
         .min(1, 'Provide at least one symptom')
         .max(12, 'Keep it concise (<= 12).')
         .describe(
         [
-            "Specific symptoms the user mentions. Examples include:",
+            "Specific symptoms the user mentions. Examples include but not limited to:",
             "• anxiety: 'racing thoughts', 'restlessness', 'feeling on edge', 'excess worry and rumination', 'racing heart rate'",
             "• depression: 'low energy', 'flat affect', 'no motivation', 'feeling empty', 'persistent sadness', 'hopelessness', 'loss of interest or pleasure in activities once enjoyed', 'feeling guilt or worthlessness'",
             "• trauma: 'rumination', 'nightmares', 'flashbacks', 'intrusive thoughts', 'feeling disconnected', 'excess guilt', 'excess shame'",
@@ -24,7 +24,7 @@ export const standardIntakeSchema = z.object({
         ].join('\n')
         ),
 
-    sleep_quality: z.enum(['poor', 'fair', 'good'])
+    sleep_quality: z.enum(['poor sleep', 'fair sleep', 'good sleep'])
         .optional()
         .describe("The user's self-reported quality of sleep"),
     
