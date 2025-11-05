@@ -9,7 +9,7 @@ import {
 } from "@jest/globals";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import LoginScreen from "@/app/(tabs)/login";
-import { useRouter } from "expo-router";
+import { useRouter, useSegments } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
 
 jest.mock("react-native-safe-area-context", () => {
@@ -28,6 +28,7 @@ jest.mock("react-native-safe-area-context", () => {
 
 jest.mock("expo-router", () => ({
   useRouter: jest.fn(),
+  useSegments: jest.fn(),
 }));
 
 jest.mock("@/context/AuthContext", () => ({
@@ -35,6 +36,7 @@ jest.mock("@/context/AuthContext", () => ({
 }));
 
 const useRouterMock = useRouter as jest.Mock;
+const useSegmentsMock = useSegments as jest.Mock;
 const useAuthMock = useAuth as jest.Mock;
 
 describe("<LoginScreen />", () => {
@@ -48,6 +50,7 @@ describe("<LoginScreen />", () => {
       replace: replaceMock,
       push: pushMock,
     });
+    useSegmentsMock.mockReturnValue(["(tabs)", "login"]);
     useAuthMock.mockReturnValue({
       logIn: jest.fn(),
       profile: null,
@@ -57,6 +60,9 @@ describe("<LoginScreen />", () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    useRouterMock.mockReset();
+    useSegmentsMock.mockReset();
+    useAuthMock.mockReset();
   });
 
   test("submits trimmed credentials and navigates on success", async () => {
@@ -67,7 +73,9 @@ describe("<LoginScreen />", () => {
       isLoggedIn: false,
     });
 
-    const { getByPlaceholderText, getByRole } = render(<LoginScreen />);
+    const { getByPlaceholderText, getByRole, queryByText } = render(
+      <LoginScreen />
+    );
 
     fireEvent.changeText(getByPlaceholderText("Your name here"), "  user ");
     fireEvent.changeText(getByPlaceholderText("Enter your password"), " secret ");
@@ -82,6 +90,10 @@ describe("<LoginScreen />", () => {
 
     await waitFor(() =>
       expect(replaceMock).toHaveBeenCalledWith("/(tabs)/profile")
+    );
+
+    await waitFor(() =>
+      expect(queryByText(/Signing you in/i)).toBeNull()
     );
   });
 
@@ -111,5 +123,46 @@ describe("<LoginScreen />", () => {
     fireEvent.press(getByRole("button", { name: "Create an account" }));
 
     expect(pushMock).toHaveBeenCalledWith("/(tabs)/create-account");
+  });
+
+  test("clears credentials when profile is removed", async () => {
+    const authState = {
+      logIn: jest.fn(),
+      createAccount: jest.fn(),
+      logOut: jest.fn(),
+      updateProfile: jest.fn(),
+      loadingProfile: false,
+      profile: {
+        username: "joey",
+        zipcode: "",
+        previousChatSessionIds: [],
+        recommendedResourceIds: [],
+        clinicIds: [],
+      },
+      isLoggedIn: true,
+    };
+
+    useAuthMock.mockImplementation(() => ({ ...authState }));
+
+    const utils = render(<LoginScreen />);
+
+    await waitFor(() =>
+      expect(
+        utils.getByPlaceholderText("Your name here").props.value
+      ).toBe("joey")
+    );
+
+    authState.profile = null;
+    authState.isLoggedIn = false;
+    utils.rerender(<LoginScreen />);
+
+    await waitFor(() => {
+      expect(
+        utils.getByPlaceholderText("Your name here").props.value
+      ).toBe("");
+      expect(
+        utils.getByPlaceholderText("Enter your password").props.value
+      ).toBe("");
+    });
   });
 });
