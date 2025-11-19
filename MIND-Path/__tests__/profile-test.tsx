@@ -12,6 +12,7 @@ import ProfileScreen from "@/app/(tabs)/profile";
 import { useAuth } from "@/context/AuthContext";
 import { useSegments } from "expo-router";
 import { fetchProvidersByIds } from "@/utils/supabaseProvider";
+import { fetchResourcesByIds } from "@/utils/supabaseContent";
 
 jest.mock("react-native-safe-area-context", () => {
   const actual = jest.requireActual("react-native-safe-area-context");
@@ -39,9 +40,14 @@ jest.mock("@/utils/supabaseProvider", () => ({
   fetchProvidersByIds: jest.fn(),
 }));
 
+jest.mock("@/utils/supabaseContent", () => ({
+  fetchResourcesByIds: jest.fn(),
+}));
+
 const useAuthMock = useAuth as jest.Mock;
 const useSegmentsMock = useSegments as jest.Mock;
 const fetchProvidersByIdsMock = fetchProvidersByIds as jest.Mock;
+const fetchResourcesByIdsMock = fetchResourcesByIds as jest.Mock;
 
 const mockProfile = {
   username: "joey",
@@ -88,6 +94,15 @@ describe("<ProfileScreen />", () => {
         distance_m: null,
       },
     ]);
+    fetchResourcesByIdsMock.mockResolvedValue([
+      {
+        id: "res-1",
+        title: "Calm Breathing Guide",
+        type: "article",
+        org: "Mindful Org",
+        url: "https://example.com",
+      },
+    ]);
     consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
   });
 
@@ -96,6 +111,7 @@ describe("<ProfileScreen />", () => {
     consoleErrorSpy.mockRestore();
     useSegmentsMock.mockReset();
     fetchProvidersByIdsMock.mockReset();
+    fetchResourcesByIdsMock.mockReset();
   });
 
   test("shows profile data, including zipcode inline", async () => {
@@ -103,11 +119,12 @@ describe("<ProfileScreen />", () => {
 
     await waitFor(() => {
       expect(fetchProvidersByIdsMock).toHaveBeenCalledWith([123]);
+      expect(fetchResourcesByIdsMock).toHaveBeenCalledWith(["res-1"]);
       expect(utils.getByText("Previous chats / Resources")).toBeTruthy();
       expect(utils.getByText(/Near by Me/)).toBeTruthy();
       expect(utils.getByText(/90210/)).toBeTruthy();
       expect(utils.getByText("chat-1")).toBeTruthy();
-      expect(utils.getByText("res-1")).toBeTruthy();
+      expect(utils.getByText("Calm Breathing Guide")).toBeTruthy();
       expect(utils.getByText("Mindful Clinic")).toBeTruthy();
       expect(utils.getByText("Los Angeles, CA")).toBeTruthy();
       expect(utils.getByText("Phone: 123-456-7890")).toBeTruthy();
@@ -115,9 +132,9 @@ describe("<ProfileScreen />", () => {
   });
 
   test("opens zipcode editor and saves changes", async () => {
-    const { getByText, getByPlaceholderText } = render(<ProfileScreen />);
+    const { getAllByText, getByPlaceholderText, getByText } = render(<ProfileScreen />);
 
-    fireEvent.press(getByText("Edit"));
+    fireEvent.press(getAllByText("Edit")[1]);
 
     const zipInput = getByPlaceholderText("Enter zipcode");
     fireEvent.changeText(zipInput, "10001");
@@ -149,5 +166,48 @@ describe("<ProfileScreen />", () => {
     await waitFor(() => {
       expect(getAllByText("Log in").length).toBeGreaterThan(0);
     });
+  });
+
+  test("removes a saved resource through edit mode", async () => {
+    const utils = render(<ProfileScreen />);
+
+    await waitFor(() => {
+      expect(utils.getByText("Calm Breathing Guide")).toBeTruthy();
+    });
+
+    updateProfileMock.mockClear();
+    const editButtons = utils.getAllByText("Edit");
+    fireEvent.press(editButtons[0]);
+
+    await waitFor(() => {
+      expect(utils.getAllByText("Remove").length).toBeGreaterThan(0);
+    });
+
+    fireEvent.press(utils.getAllByText("Remove")[0]);
+
+    await waitFor(() =>
+      expect(updateProfileMock).toHaveBeenCalledWith({ recommendedResourceIds: [] })
+    );
+  });
+
+  test("removes a saved provider through edit mode", async () => {
+    const utils = render(<ProfileScreen />);
+
+    await waitFor(() => {
+      expect(utils.getByText("Mindful Clinic")).toBeTruthy();
+    });
+
+    updateProfileMock.mockClear();
+    const editButtons = utils.getAllByText("Edit");
+    const providerEditButton = editButtons[editButtons.length - 1];
+    fireEvent.press(providerEditButton);
+
+    await waitFor(() => expect(utils.getByText("Remove")).toBeTruthy());
+    const removeButton = utils.getByText("Remove");
+    fireEvent.press(removeButton);
+
+    await waitFor(() =>
+      expect(updateProfileMock).toHaveBeenCalledWith({ clinicIds: [] })
+    );
   });
 });

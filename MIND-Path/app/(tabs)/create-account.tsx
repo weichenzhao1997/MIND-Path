@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   View,
@@ -28,6 +28,12 @@ export default function CreateAccountScreen() {
   const [zipcode, setZipcode] = useState("");
   const [secureEntry, setSecureEntry] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const resetForm = useCallback(() => {
+    setUsername("");
+    setPassword("");
+    setZipcode("");
+    setSecureEntry(true);
+  }, []);
 
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
@@ -58,8 +64,10 @@ export default function CreateAccountScreen() {
         recommendedResourceIds: [],
         clinicIds: [],
       });
+      resetForm();
+      setSubmitting(false);
       shouldResetSubmitting = false;
-      router.replace("/(tabs)/login");
+      router.push("/(tabs)/login");
     } catch (error) {
       console.warn("Failed to create account", error);
     } finally {
@@ -159,7 +167,7 @@ export default function CreateAccountScreen() {
           <Pressable
             accessibilityRole="button"
             style={{ alignSelf: "center" }}
-            onPress={() => router.replace("/(tabs)/login")}
+            onPress={() => router.push("/(tabs)/login")}
           >
             <Text style={styles.linkText}>Already have an account? Sign in</Text>
           </Pressable>
