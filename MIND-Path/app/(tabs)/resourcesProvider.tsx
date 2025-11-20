@@ -245,14 +245,14 @@ export default function ResourcesTab() {
               autoCapitalize="characters"
             />
             <TextInput
-              placeholder="Name contains (e.g. clinic)"
+              placeholder="Name contains (e.g. counseling)"
               value={q}
               onChangeText={setQ}
               style={styles.input}
               placeholderTextColor={G_MUTED}
             />
             <TextInput
-              placeholder="Specialty contains (e.g. anxiety, ADHD, therapy)"
+              placeholder="Specialty contains (e.g. psychiatry, addiction)"
               value={specialty}
               onChangeText={setSpecialty}
               style={styles.input}
