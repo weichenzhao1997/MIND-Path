@@ -40,14 +40,12 @@ const useSegmentsMock = useSegments as jest.Mock;
 const useAuthMock = useAuth as jest.Mock;
 
 describe("<LoginScreen />", () => {
-  let replaceMock: jest.Mock;
   let pushMock: jest.Mock;
 
   beforeEach(() => {
-    replaceMock = jest.fn();
     pushMock = jest.fn();
     useRouterMock.mockReturnValue({
-      replace: replaceMock,
+      replace: jest.fn(),
       push: pushMock,
     });
     useSegmentsMock.mockReturnValue(["(tabs)", "login"]);
@@ -88,9 +86,7 @@ describe("<LoginScreen />", () => {
       })
     );
 
-    await waitFor(() =>
-      expect(replaceMock).toHaveBeenCalledWith("/(tabs)/profile")
-    );
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/(tabs)/profile"));
 
     await waitFor(() =>
       expect(queryByText(/Signing you in/i)).toBeNull()
@@ -114,7 +110,7 @@ describe("<LoginScreen />", () => {
     fireEvent.press(getByRole("button", { name: "Log in" }));
 
     expect(await findByText(/Incorrect username or password/)).toBeTruthy();
-    expect(replaceMock).not.toHaveBeenCalled();
+    expect(pushMock).not.toHaveBeenCalled();
   });
 
   test("navigates to create account screen", () => {

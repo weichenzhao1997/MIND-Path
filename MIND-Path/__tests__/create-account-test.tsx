@@ -38,15 +38,14 @@ const useRouterMock = useRouter as jest.Mock;
 const useAuthMock = useAuth as jest.Mock;
 
 describe("<CreateAccountScreen />", () => {
-  let replaceMock: jest.Mock;
-  let backMock: jest.Mock;
+  let pushMock: jest.Mock;
 
   beforeEach(() => {
-    replaceMock = jest.fn();
-    backMock = jest.fn();
+    pushMock = jest.fn();
     useRouterMock.mockReturnValue({
-      replace: replaceMock,
-      back: backMock,
+      replace: jest.fn(),
+      back: jest.fn(),
+      push: pushMock,
     });
     useAuthMock.mockReturnValue({
       createAccount: jest.fn(),
@@ -84,9 +83,35 @@ describe("<CreateAccountScreen />", () => {
       })
     );
 
-    await waitFor(() =>
-      expect(replaceMock).toHaveBeenCalledWith("/(tabs)/login")
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/(tabs)/login"));
+  });
+
+  test("clears form fields after successful account creation", async () => {
+    const createAccountMock = jest.fn().mockResolvedValue(undefined);
+    useAuthMock.mockReturnValue({
+      createAccount: createAccountMock,
+    });
+
+    const utils = render(<CreateAccountScreen />);
+    const usernameInput = utils.getByPlaceholderText("Choose a username");
+    const passwordInput = utils.getByPlaceholderText("Create a password");
+    const zipInput = utils.getByPlaceholderText("5-digit zip code");
+
+    fireEvent.changeText(usernameInput, "user");
+    fireEvent.changeText(passwordInput, "password");
+    fireEvent.changeText(zipInput, "12345");
+
+    fireEvent.press(
+      utils.getByRole("button", { name: "Create account" })
     );
+
+    await waitFor(() => expect(createAccountMock).toHaveBeenCalled());
+
+    await waitFor(() => {
+      expect(usernameInput.props.value).toBe("");
+      expect(passwordInput.props.value).toBe("");
+      expect(zipInput.props.value).toBe("");
+    });
   });
 
   test("does not submit when username or password missing", () => {
@@ -109,6 +134,6 @@ describe("<CreateAccountScreen />", () => {
       getByRole("button", { name: "Already have an account? Sign in" })
     );
 
-    expect(replaceMock).toHaveBeenCalledWith("/(tabs)/login");
+    expect(pushMock).toHaveBeenCalledWith("/(tabs)/login");
   });
 });

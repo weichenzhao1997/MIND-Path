@@ -1,5 +1,5 @@
 // app/(tabs)/resourcesContent.tsx
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Text,
   View,
@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { searchResourcesBySymptom, Resource } from "@/utils/supabaseContent";
+import { useAuth } from "@/context/AuthContext";
 
 /** ---------- Theme ---------- */
 const GREEN_LIGHT = "#DDEFE6";
@@ -30,6 +31,7 @@ const ensureHttp = (url: string) =>
 
 export default function ResourcesContent() {
   const router = useRouter();
+  const { isLoggedIn, profile, updateProfile } = useAuth();
 
   // symptom input state
   const [symptom, setSymptom] = useState("");
@@ -39,6 +41,18 @@ export default function ResourcesContent() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<Resource[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [savingResourceId, setSavingResourceId] = useState<string | null>(null);
+  const [removingResourceId, setRemovingResourceId] = useState<string | null>(null);
+
+  const savedResourceIds = useMemo(
+    () =>
+      new Set(
+        (profile?.recommendedResourceIds ?? [])
+          .map(id => id.trim())
+          .filter(id => id.length > 0)
+      ),
+    [profile?.recommendedResourceIds]
+  );
 
   /** ---------- runSearch Supabase RPC ---------- */
   const runSearch = async () => {
@@ -60,12 +74,55 @@ export default function ResourcesContent() {
     }
   };
 
+  const handleToggleResource = async (resource: Resource) => {
+    const resourceId = resource.id?.trim();
+    if (!resourceId) return;
+
+    if (!isLoggedIn) {
+      router.push("/(tabs)/login");
+      return;
+    }
+
+    const currentlySaved = savedResourceIds.has(resourceId);
+    if (currentlySaved) {
+      if (removingResourceId === resourceId) {
+        return;
+      }
+      setRemovingResourceId(resourceId);
+      try {
+        const current = profile?.recommendedResourceIds ?? [];
+        const next = current.filter(id => id.trim() !== resourceId);
+        await updateProfile({ recommendedResourceIds: next });
+      } catch (error) {
+        console.warn("Failed to remove resource", error);
+      } finally {
+        setRemovingResourceId(prev => (prev === resourceId ? null : prev));
+      }
+      return;
+    }
+
+    if (savingResourceId === resourceId) {
+      return;
+    }
+
+    setSavingResourceId(resourceId);
+    try {
+      const current = profile?.recommendedResourceIds ?? [];
+      const next = Array.from(new Set([...current, resourceId]));
+      await updateProfile({ recommendedResourceIds: next });
+    } catch (error) {
+      console.warn("Failed to save resource", error);
+    } finally {
+      setSavingResourceId(prev => (prev === resourceId ? null : prev));
+    }
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#f3f4f6" }}>
       {/* Back to switch page */}
       <View style={styles.backBar}>
         <Text
-          onPress={() => router.replace("/(tabs)/resources")}
+          onPress={() => router.push("/(tabs)/resources")}
           style={styles.backText}
         >
           ← Back to Resources
@@ -122,37 +179,62 @@ export default function ResourcesContent() {
                 </Text>
               </View>
             ) : (
-              results.map((r) => (
-                <View key={r.id} style={styles.card}>
-                  {/* Title */}
-                  <Text numberOfLines={2} style={styles.title}>
-                    {r.title}
-                  </Text>
-
-                  {/* Meta row: org + type */}
-                  <View style={styles.metaRow}>
-                    {r.org ? (
-                      <Text style={styles.org} numberOfLines={1}>
-                        {r.org}
-                      </Text>
-                    ) : null}
-
-                    <View style={styles.typePill}>
-                      <Text style={styles.typePillText}>{r.type}</Text>
-                    </View>
-                  </View>
-
-                  {/* URL */}
-                  <Pressable
-                    onPress={() => Linking.openURL(ensureHttp(r.url))}
-                    hitSlop={8}
-                  >
-                    <Text numberOfLines={1} style={styles.url}>
-                      {r.url}
+              results.map(r => {
+                const isSaved = savedResourceIds.has(r.id);
+                const isSaving = savingResourceId === r.id;
+                const isRemoving = removingResourceId === r.id;
+                return (
+                  <View key={r.id} style={styles.card}>
+                    {/* Title */}
+                    <Text numberOfLines={2} style={styles.title}>
+                      {r.title}
                     </Text>
-                  </Pressable>
-                </View>
-              ))
+
+                    {/* Meta row: org + type */}
+                    <View style={styles.metaRow}>
+                      {r.org ? (
+                        <Text style={styles.org} numberOfLines={1}>
+                          {r.org}
+                        </Text>
+                      ) : null}
+
+                      <View style={styles.typePill}>
+                        <Text style={styles.typePillText}>{r.type}</Text>
+                      </View>
+                    </View>
+
+                    {/* URL */}
+                    <Pressable
+                      onPress={() => Linking.openURL(ensureHttp(r.url))}
+                      hitSlop={8}
+                    >
+                      <Text numberOfLines={1} style={styles.url}>
+                        {r.url}
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => handleToggleResource(r)}
+                      disabled={isSaving || isRemoving}
+                      style={[
+                        styles.saveBtn,
+                        (isSaved || isSaving || isRemoving) && styles.saveBtnDisabled,
+                      ]}
+                    >
+                      <Text style={styles.saveBtnText}>
+                        {isSaving
+                          ? "Saving..."
+                          : isRemoving
+                            ? "Removing..."
+                            : isSaved
+                              ? "Saved — tap to remove"
+                              : "Save to profile"}
+                      </Text>
+                    </Pressable>
+                  </View>
+                );
+              })
             )}
           </>
         )}
@@ -286,6 +368,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     color: BLUE_LINK,
+  },
+  saveBtn: {
+    marginTop: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: GREEN_BORDER,
+    backgroundColor: "#ffffff",
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  saveBtnDisabled: {
+    backgroundColor: "#e0ebdf",
+    borderColor: "rgba(6,95,70,0.3)",
+  },
+  saveBtnText: {
+    color: GREEN_TEXT,
+    fontWeight: "700",
   },
 
   emptyText: {
