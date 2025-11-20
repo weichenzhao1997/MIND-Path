@@ -1,7 +1,7 @@
 // app/(tabs)/resources.tsx
 import React from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
 import { useRouter, type Href } from "expo-router"; // Import Href for typed navigation
 
 // Global design colors
@@ -18,8 +18,11 @@ export default function ResourcesSwitch() {
   const router = useRouter();
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: G_BG }}>
-      <View style={styles.container}>
+    <SafeAreaView style={styles.safe}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.title}>Pick a Resources tool</Text>
         <Text style={styles.subtitle}>You can switch between two implementations.</Text>
 
@@ -50,13 +53,19 @@ export default function ResourcesSwitch() {
             <Text style={styles.buttonText}>Go to Choice 2</Text>
           </Pressable>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: 16, paddingTop: 12 },
+  safe: { flex: 1, backgroundColor: G_BG },
+  container: {
+    flexGrow: 1,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 32,
+  },
   title: { fontSize: 22, fontWeight: "800", textAlign: "center", marginTop: 8, color: G_TEXT },
   subtitle: { textAlign: "center", color: G_MUTED, marginTop: 4, marginBottom: 12 },
   card: {

@@ -255,3 +255,29 @@ export async function searchProvidersPagedGeoAware(
   }))
   return { rows, total };
 }
+
+/* =========================================================
+ * Saved provider helpers
+ * =======================================================*/
+
+export async function fetchProvidersByIds(
+  ids: readonly number[]
+): Promise<ProviderRow[]> {
+  const uniqueIds = Array.from(new Set(ids.filter(Number.isFinite)));
+
+  if (uniqueIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabaseProvider
+    .from("provider_search_mh_view")
+    .select("*")
+    .in("provider_id", uniqueIds)
+    .order("provider_id", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []) as ProviderRow[];
+}

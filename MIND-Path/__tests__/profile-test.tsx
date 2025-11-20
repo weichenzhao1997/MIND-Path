@@ -11,6 +11,8 @@ import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import ProfileScreen from "@/app/(tabs)/profile";
 import { useAuth } from "@/context/AuthContext";
 import { useSegments } from "expo-router";
+import { fetchProvidersByIds } from "@/utils/supabaseProvider";
+import { fetchResourcesByIds } from "@/utils/supabaseContent";
 
 jest.mock("react-native-safe-area-context", () => {
   const actual = jest.requireActual("react-native-safe-area-context");
@@ -34,15 +36,25 @@ jest.mock("@/context/AuthContext", () => ({
   useAuth: jest.fn(),
 }));
 
+jest.mock("@/utils/supabaseProvider", () => ({
+  fetchProvidersByIds: jest.fn(),
+}));
+
+jest.mock("@/utils/supabaseContent", () => ({
+  fetchResourcesByIds: jest.fn(),
+}));
+
 const useAuthMock = useAuth as jest.Mock;
 const useSegmentsMock = useSegments as jest.Mock;
+const fetchProvidersByIdsMock = fetchProvidersByIds as jest.Mock;
+const fetchResourcesByIdsMock = fetchResourcesByIds as jest.Mock;
 
 const mockProfile = {
   username: "joey",
   zipcode: "90210",
   previousChatSessionIds: ["chat-1", "chat-2"],
   recommendedResourceIds: ["res-1"],
-  clinicIds: ["clinic-1"],
+  clinicIds: ["123"],
 };
 
 describe("<ProfileScreen />", () => {
@@ -53,13 +65,44 @@ describe("<ProfileScreen />", () => {
   beforeEach(() => {
     logOutMock = jest.fn();
     updateProfileMock = jest.fn().mockResolvedValue(undefined);
+    const profileClone = {
+      ...mockProfile,
+      previousChatSessionIds: [...mockProfile.previousChatSessionIds],
+      recommendedResourceIds: [...mockProfile.recommendedResourceIds],
+      clinicIds: [...mockProfile.clinicIds],
+    };
+
     useAuthMock.mockReturnValue({
       isLoggedIn: true,
-      profile: mockProfile,
+      profile: profileClone,
       logOut: logOutMock,
       updateProfile: updateProfileMock,
     });
     useSegmentsMock.mockReturnValue(["(tabs)", "profile"]);
+    fetchProvidersByIdsMock.mockResolvedValue([
+      {
+        provider_id: 123,
+        basic_name: "Mindful Clinic",
+        city: "Los Angeles",
+        state: "CA",
+        phone: "123-456-7890",
+        taxonomy_desc: null,
+        specialty: "Therapy",
+        enumeration_type: null,
+        npi: null,
+        updated_at: null,
+        distance_m: null,
+      },
+    ]);
+    fetchResourcesByIdsMock.mockResolvedValue([
+      {
+        id: "res-1",
+        title: "Calm Breathing Guide",
+        type: "article",
+        org: "Mindful Org",
+        url: "https://example.com",
+      },
+    ]);
     consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
   });
 
@@ -67,25 +110,31 @@ describe("<ProfileScreen />", () => {
     jest.clearAllMocks();
     consoleErrorSpy.mockRestore();
     useSegmentsMock.mockReset();
+    fetchProvidersByIdsMock.mockReset();
+    fetchResourcesByIdsMock.mockReset();
   });
 
   test("shows profile data, including zipcode inline", async () => {
     const utils = render(<ProfileScreen />);
 
     await waitFor(() => {
+      expect(fetchProvidersByIdsMock).toHaveBeenCalledWith([123]);
+      expect(fetchResourcesByIdsMock).toHaveBeenCalledWith(["res-1"]);
       expect(utils.getByText("Previous chats / Resources")).toBeTruthy();
       expect(utils.getByText(/Near by Me/)).toBeTruthy();
       expect(utils.getByText(/90210/)).toBeTruthy();
       expect(utils.getByText("chat-1")).toBeTruthy();
-      expect(utils.getByText("res-1")).toBeTruthy();
-      expect(utils.getByText("clinic-1")).toBeTruthy();
+      expect(utils.getByText("Calm Breathing Guide")).toBeTruthy();
+      expect(utils.getByText("Mindful Clinic")).toBeTruthy();
+      expect(utils.getByText("Los Angeles, CA")).toBeTruthy();
+      expect(utils.getByText("Phone: 123-456-7890")).toBeTruthy();
     });
   });
 
   test("opens zipcode editor and saves changes", async () => {
-    const { getByText, getByPlaceholderText } = render(<ProfileScreen />);
+    const { getAllByText, getByPlaceholderText, getByText } = render(<ProfileScreen />);
 
-    fireEvent.press(getByText("Edit"));
+    fireEvent.press(getAllByText("Edit")[1]);
 
     const zipInput = getByPlaceholderText("Enter zipcode");
     fireEvent.changeText(zipInput, "10001");
@@ -117,5 +166,48 @@ describe("<ProfileScreen />", () => {
     await waitFor(() => {
       expect(getAllByText("Log in").length).toBeGreaterThan(0);
     });
+  });
+
+  test("removes a saved resource through edit mode", async () => {
+    const utils = render(<ProfileScreen />);
+
+    await waitFor(() => {
+      expect(utils.getByText("Calm Breathing Guide")).toBeTruthy();
+    });
+
+    updateProfileMock.mockClear();
+    const editButtons = utils.getAllByText("Edit");
+    fireEvent.press(editButtons[0]);
+
+    await waitFor(() => {
+      expect(utils.getAllByText("Remove").length).toBeGreaterThan(0);
+    });
+
+    fireEvent.press(utils.getAllByText("Remove")[0]);
+
+    await waitFor(() =>
+      expect(updateProfileMock).toHaveBeenCalledWith({ recommendedResourceIds: [] })
+    );
+  });
+
+  test("removes a saved provider through edit mode", async () => {
+    const utils = render(<ProfileScreen />);
+
+    await waitFor(() => {
+      expect(utils.getByText("Mindful Clinic")).toBeTruthy();
+    });
+
+    updateProfileMock.mockClear();
+    const editButtons = utils.getAllByText("Edit");
+    const providerEditButton = editButtons[editButtons.length - 1];
+    fireEvent.press(providerEditButton);
+
+    await waitFor(() => expect(utils.getByText("Remove")).toBeTruthy());
+    const removeButton = utils.getByText("Remove");
+    fireEvent.press(removeButton);
+
+    await waitFor(() =>
+      expect(updateProfileMock).toHaveBeenCalledWith({ clinicIds: [] })
+    );
   });
 });

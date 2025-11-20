@@ -20,13 +20,19 @@ const GREEN_TEXT = "#065F46";
 const PLACEHOLDER = "#3a6a54";
 const ERROR_TEXT = "#dc2626";
 
-export default function LoginScreen() {
+type LoginScreenProps = {
+  embedded?: boolean;
+};
+
+export default function LoginScreen({ embedded = false }: LoginScreenProps) {
   const { logIn, profile, isLoggedIn } = useAuth();
   const router = useRouter();
   const segments = useSegments();
 
-  const inProfileTab =
-    segments.length >= 2 && segments[0] === "(tabs)" && segments[1] === "profile";
+  const currentSegments =
+    segments.length >= 2 && segments[0] === "(tabs)" ? segments[1] : null;
+  const inProfileTab = currentSegments === "profile";
+  const inLoginRoute = currentSegments === "login";
 
   const [username, setUsername] = useState(profile?.username ?? "");
   const [password, setPassword] = useState("");
@@ -44,12 +50,10 @@ export default function LoginScreen() {
   }, [profile]);
 
   useEffect(() => {
-      if (isLoggedIn) {
-      if (!inProfileTab) {
-        router.replace("/(tabs)/profile");
-      }
+    if (!embedded && isLoggedIn && inLoginRoute) {
+      router.push("/(tabs)/profile");
     }
-  }, [isLoggedIn, router]);
+  }, [embedded, inLoginRoute, isLoggedIn, router]);
 
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
@@ -85,8 +89,8 @@ export default function LoginScreen() {
       setSubmitting(false);
       shouldResetSubmitting = false;
 
-      if (!inProfileTab) {
-        router.replace("/(tabs)/profile");
+      if (!embedded && !inProfileTab) {
+        router.push("/(tabs)/profile");
       }
     } catch (error) {
       console.warn("Failed to sign in", error);
