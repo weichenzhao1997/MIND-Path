@@ -209,7 +209,7 @@ export default function ResourcesTab() {
               placeholderTextColor={G_MUTED}
             />
             <TextInput
-              placeholder="Specialty contains (e.g. psychiatry, addiction, adolescents)"
+              placeholder="Specialty contains (e.g. psychiatry, addiction)"
               value={specialty}
               onChangeText={setSpecialty}
               style={styles.input}

@@ -267,7 +267,7 @@ async function main() {
   // Usage:
   //   npx ts-node --esm scripts/npi_import.ts "Boston" "MA"
   //   npx ts-node --esm scripts/npi_import.ts "" "" "02124"   ← import by ZIP code
-  const city = process.argv[2] || 'Boston';
+  const city = process.argv[2] || '';
   const state = process.argv[3] || 'MA';
   const postalCode = process.argv[4]; // if provided, ZIP takes precedence
   console.log(`Importing NPI for ${postalCode ? `ZIP ${postalCode}` : `${city}, ${state}`} ...`);
