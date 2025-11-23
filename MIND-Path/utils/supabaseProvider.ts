@@ -252,8 +252,7 @@ export async function searchProvidersPagedGeoAware(
     specialty: r.specialty ?? null,
     updated_at: null,
     distance_m: typeof r.distance_m === 'number' ? r.distance_m : null,
-  }));
-
+  }))
   return { rows, total };
 }
 
