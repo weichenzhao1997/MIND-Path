@@ -252,7 +252,32 @@ export async function searchProvidersPagedGeoAware(
     specialty: r.specialty ?? null,
     updated_at: null,
     distance_m: typeof r.distance_m === 'number' ? r.distance_m : null,
-  }));
-
+  }))
   return { rows, total };
+}
+
+/* =========================================================
+ * Saved provider helpers
+ * =======================================================*/
+
+export async function fetchProvidersByIds(
+  ids: readonly number[]
+): Promise<ProviderRow[]> {
+  const uniqueIds = Array.from(new Set(ids.filter(Number.isFinite)));
+
+  if (uniqueIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabaseProvider
+    .from("provider_search_mh_view")
+    .select("*")
+    .in("provider_id", uniqueIds)
+    .order("provider_id", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []) as ProviderRow[];
 }

@@ -21,6 +21,7 @@ import {
   searchProvidersPagedGeoAware,
   type ProviderRow,
 } from '@/utils/supabaseProvider';
+import { useAuth } from "@/context/AuthContext";
 
 const PAGE_SIZE = 20;
 
@@ -38,6 +39,7 @@ const G_BADGE_TX = '#1F5C45';
 
 export default function ResourcesTab() {
   const router = useRouter();
+  const { isLoggedIn, profile, updateProfile } = useAuth();
   const [rows, setRows] = useState<ProviderRow[]>([]);
   const [total, setTotal] = useState(0);
 
@@ -54,8 +56,19 @@ export default function ResourcesTab() {
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [offset, setOffset] = useState(0);
+  const [savingProviderId, setSavingProviderId] = useState<number | null>(null);
 
   const canLoadMore = rows.length < total;
+
+  const savedClinicIds = useMemo(
+    () =>
+      new Set(
+        (profile?.clinicIds ?? [])
+          .map(id => String(id).trim())
+          .filter(id => id.length > 0)
+      ),
+    [profile?.clinicIds]
+  );
 
   // --- dedupe: same provider + same phone => one entry
   function dedupe(input: ProviderRow[]) {
@@ -81,6 +94,36 @@ export default function ResourcesTab() {
     const point = { lat: pos.coords.latitude, lng: pos.coords.longitude };
     setRefPoint(point);
     return point;
+  };
+
+  const handleSaveProvider = async (provider: ProviderRow) => {
+    const providerId =
+      typeof provider.provider_id === "number" ? provider.provider_id : null;
+    if (!providerId) {
+      return;
+    }
+
+    const providerIdStr = providerId.toString();
+
+    if (!isLoggedIn) {
+      router.push("/(tabs)/login");
+      return;
+    }
+
+    if (savedClinicIds.has(providerIdStr) || savingProviderId === providerId) {
+      return;
+    }
+
+    setSavingProviderId(providerId);
+    try {
+      const current = (profile?.clinicIds ?? []).map(id => id.toString());
+      const next = Array.from(new Set([...current, providerIdStr]));
+      await updateProfile({ clinicIds: next });
+    } catch (error) {
+      console.warn("Failed to save provider", error);
+    } finally {
+      setSavingProviderId(prev => (prev === providerId ? null : prev));
+    }
   };
 
   async function load(reset = true) {
@@ -156,7 +199,7 @@ export default function ResourcesTab() {
       {/* Back to switch page */}
       <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
         <Text
-          onPress={() => router.replace("/(tabs)/resources")}
+          onPress={() => router.push("/(tabs)/resources")}
           style={{ color: G_LINK, fontWeight: "700" }}
         >
           ← Back to Resources
@@ -202,14 +245,14 @@ export default function ResourcesTab() {
               autoCapitalize="characters"
             />
             <TextInput
-              placeholder="Name contains (e.g. clinic)"
+              placeholder="Name contains (e.g. counseling)"
               value={q}
               onChangeText={setQ}
               style={styles.input}
               placeholderTextColor={G_MUTED}
             />
             <TextInput
-              placeholder="Specialty contains (e.g. anxiety, ADHD, therapy)"
+              placeholder="Specialty contains (e.g. psychiatry, addiction)"
               value={specialty}
               onChangeText={setSpecialty}
               style={styles.input}
@@ -262,30 +305,55 @@ export default function ResourcesTab() {
           </Text>
 
           {/* Results */}
-          {rows.map((r) => (
-            <View key={`${r.provider_id}-${r.phone ?? ''}`} style={styles.card}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Text style={styles.name}>{r.basic_name || '(no name)'}</Text>
-                {distanceBadge(r)}
-              </View>
+          {rows.map(r => {
+            const providerKey = `${r.provider_id}-${r.phone ?? ''}`;
+            const providerIdStr =
+              typeof r.provider_id === "number" && Number.isFinite(r.provider_id)
+                ? r.provider_id.toString()
+                : null;
+            const isSaved = providerIdStr ? savedClinicIds.has(providerIdStr) : false;
+            const isSaving = savingProviderId === r.provider_id;
+            const disableSave = !providerIdStr || isSaved || isSaving;
+            return (
+              <View key={providerKey} style={styles.card}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text style={styles.name}>{r.basic_name || '(no name)'}</Text>
+                  {distanceBadge(r)}
+                </View>
 
-              <Text style={styles.meta}>
-                {r.city}, {r.state}
-              </Text>
-
-              {!!r.phone && (
-                <Text
-                  style={styles.link}
-                  onPress={() => Linking.openURL(`tel:${r.phone}`)}
-                >
-                  {r.phone}
+                <Text style={styles.meta}>
+                  {r.city}, {r.state}
                 </Text>
-              )}
 
-              {/* show specialty instead of taxonomy */}
-              <Text style={styles.tax}>{(r as any).specialty || '(no specialty listed)'}</Text>
-            </View>
-          ))}
+                {!!r.phone && (
+                  <Text
+                    style={styles.link}
+                    onPress={() => Linking.openURL(`tel:${r.phone}`)}
+                  >
+                    {r.phone}
+                  </Text>
+                )}
+
+                {/* show specialty instead of taxonomy */}
+                <Text style={styles.tax}>{(r as any).specialty || '(no specialty listed)'}</Text>
+
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  onPress={() => handleSaveProvider(r)}
+                  disabled={disableSave}
+                  activeOpacity={0.85}
+                  style={[
+                    styles.saveBtn,
+                    disableSave && styles.saveBtnDisabled,
+                  ]}
+                >
+                  <Text style={styles.saveBtnText}>
+                    {isSaved ? 'Saved to profile' : isSaving ? 'Saving...' : 'Save to profile'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })}
 
           {canLoadMore && (
             <TouchableOpacity
@@ -403,6 +471,20 @@ const styles = StyleSheet.create({
   meta: { marginTop: 4, color: G_MUTED },
   link: { color: G_LINK, marginTop: 6, fontWeight: '700' },
   tax: { color: '#395A4B', marginTop: 6 },
+  saveBtn: {
+    marginTop: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: G_BORDER,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: '#F7FBF9',
+  },
+  saveBtnDisabled: {
+    backgroundColor: '#E5ECE7',
+    borderColor: 'rgba(15,61,46,0.2)',
+  },
+  saveBtnText: { color: G_TEXT, fontWeight: '700' },
 
   loadMoreBtn: {
     height: 44,

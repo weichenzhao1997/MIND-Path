@@ -40,6 +40,41 @@ export async function searchResourcesBySymptom(q: string): Promise<Resource[]> {
   }));
 }
 
+export async function fetchResourcesByIds(
+  ids: readonly (string | number)[]
+): Promise<Resource[]> {
+  const uniqueIds = Array.from(
+    new Set(
+      ids
+        .map(id => {
+          if (typeof id === "string") return id.trim();
+          if (typeof id === "number") return Number.isFinite(id) ? String(id) : "";
+          return "";
+        })
+        .filter((id): id is string => id.length > 0)
+    )
+  );
+
+  if (uniqueIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("resources")
+    .select("id,title,type,org,url")
+    .in("id", uniqueIds);
+
+  if (error) throw error;
+
+  return (data ?? []).map((row: any) => ({
+    id: String(row.id),
+    title: row.title ?? "",
+    type: row.type ?? "",
+    org: row.org ?? null,
+    url: row.url ?? "",
+  }));
+}
+
 
 export async function pingSupabase(): Promise<"ok"> {
   const { data, error } = await supabase.from("resources").select("id").limit(1);

@@ -28,6 +28,7 @@ const KEY_LENGTH = 32;
 const SALT_LENGTH = 16;
 const NONCE_LENGTH = 24;
 const ENCRYPTION_VERSION = 1 as const;
+const PROFILE_STORE_SCHEMA_VERSION = 2 as const;
 
 type StoredUserProfile = {
   username: string;
@@ -68,6 +69,13 @@ type EncryptedProfileRecord = {
 
 type LegacyStoredProfile = CreateAccountPayload;
 
+type ProfileStorePayload = {
+  schemaVersion: typeof PROFILE_STORE_SCHEMA_VERSION;
+  profiles: Record<string, EncryptedProfileRecord>;
+  legacyRecords?: EncryptedProfileRecord[];
+  legacyPlainProfiles?: LegacyStoredProfile[];
+};
+
 type BrowserStorageLike = {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
@@ -102,6 +110,83 @@ function normalizeProfile(data: Partial<StoredUserProfile>): StoredUserProfile {
     recommendedResourceIds: data.recommendedResourceIds ?? [],
     clinicIds: data.clinicIds ?? [],
   };
+}
+
+function normalizeUsernameKey(username: string) {
+  return username.trim().toLowerCase();
+}
+
+function createEmptyStorePayload(): ProfileStorePayload {
+  return {
+    schemaVersion: PROFILE_STORE_SCHEMA_VERSION,
+    profiles: {},
+    legacyRecords: [],
+    legacyPlainProfiles: [],
+  };
+}
+
+function isProfileStorePayload(value: unknown): value is ProfileStorePayload {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Partial<ProfileStorePayload>;
+  const profiles = (record as { profiles?: unknown }).profiles;
+  return (
+    record.schemaVersion === PROFILE_STORE_SCHEMA_VERSION &&
+    profiles !== null &&
+    typeof profiles === "object" &&
+    !Array.isArray(profiles)
+  );
+}
+
+function parseProfileStorePayload(rawValue: string | null): ProfileStorePayload {
+  if (!rawValue) {
+    return createEmptyStorePayload();
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawValue);
+  } catch (error) {
+    console.warn("Stored profile payload was not valid JSON", error);
+    return createEmptyStorePayload();
+  }
+
+  if (isProfileStorePayload(parsed)) {
+    return {
+      schemaVersion: PROFILE_STORE_SCHEMA_VERSION,
+      profiles: { ...(parsed.profiles ?? {}) },
+      legacyRecords: [...(parsed.legacyRecords ?? [])],
+      legacyPlainProfiles: [...(parsed.legacyPlainProfiles ?? [])],
+    };
+  }
+
+  if (isEncryptedRecord(parsed)) {
+    return {
+      schemaVersion: PROFILE_STORE_SCHEMA_VERSION,
+      profiles: {},
+      legacyRecords: [parsed],
+      legacyPlainProfiles: [],
+    };
+  }
+
+  if (isLegacyProfile(parsed)) {
+    return {
+      schemaVersion: PROFILE_STORE_SCHEMA_VERSION,
+      profiles: {},
+      legacyRecords: [],
+      legacyPlainProfiles: [parsed],
+    };
+  }
+
+  return createEmptyStorePayload();
+}
+
+function removeIndex<T>(input: readonly T[] | undefined, index: number): T[] {
+  if (!input || input.length === 0) {
+    return [];
+  }
+  return input.filter((_, idx) => idx !== index);
 }
 
 type RandomSource = {
@@ -270,6 +355,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const derivedKeyRef = useRef<Uint8Array | null>(null);
   const saltHexRef = useRef<string | null>(null);
+  const activeUsernameKeyRef = useRef<string | null>(null);
   const secureStoreAvailableRef = useRef<boolean | null>(null);
   const fallbackStorageRef = useRef<string | null>(null);
 
@@ -319,9 +405,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return fallbackStorageRef.current;
   }, [ensureSecureStoreAvailability]);
 
-  const writeEncryptedProfile = useCallback(
-    async (record: EncryptedProfileRecord) => {
-      const payload = JSON.stringify(record);
+  const writeProfileStore = useCallback(
+    async (store: ProfileStorePayload) => {
+      const toPersist: ProfileStorePayload = {
+        schemaVersion: PROFILE_STORE_SCHEMA_VERSION,
+        profiles: store.profiles ?? {},
+        legacyRecords: store.legacyRecords ?? [],
+        legacyPlainProfiles: store.legacyPlainProfiles ?? [],
+      };
+      const payload = JSON.stringify(toPersist);
       fallbackStorageRef.current = payload;
 
       const useSecureStore = await ensureSecureStoreAvailability();
@@ -349,12 +441,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [ensureSecureStoreAvailability]
   );
 
+  const loadProfileStore = useCallback(async () => {
+    const rawValue = await readEncryptedProfilePayload();
+    return parseProfileStorePayload(rawValue);
+  }, [readEncryptedProfilePayload]);
+
   const persistEncryptedProfile = useCallback(
     async (
       profileData: StoredUserProfile,
       overrideKey?: Uint8Array | null,
       overrideSaltHex?: string | null
     ) => {
+      const usernameKey =
+        normalizeUsernameKey(profileData.username) || activeUsernameKeyRef.current;
+      if (!usernameKey) {
+        console.warn("Persist skipped: missing username key");
+        return;
+      }
+
       const activeKey = overrideKey ?? derivedKeyRef.current;
       const activeSaltHex = overrideSaltHex ?? saltHexRef.current;
 
@@ -364,9 +468,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const record = await buildEncryptedRecordFromKey(profileData, activeKey, activeSaltHex);
-      await writeEncryptedProfile(record);
+      const store = await loadProfileStore();
+      const nextStore: ProfileStorePayload = {
+        ...store,
+        profiles: {
+          ...store.profiles,
+          [usernameKey]: record,
+        },
+      };
+      await writeProfileStore(nextStore);
+      activeUsernameKeyRef.current = usernameKey;
     },
-    [readEncryptedProfilePayload, writeEncryptedProfile]
+    [loadProfileStore, writeProfileStore]
   );
 
   useEffect(() => {
@@ -374,7 +487,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const checkStoredProfile = async () => {
       try {
-        await readEncryptedProfilePayload();
+        await loadProfileStore();
       } catch (error) {
         console.warn("Failed to read stored user profile", error);
       } finally {
@@ -389,12 +502,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       isMounted = false;
     };
-  }, [readEncryptedProfilePayload]);
+  }, [loadProfileStore]);
 
   const createAccount = useCallback(
     async (payload: CreateAccountPayload) => {
       const { password, ...rest } = payload;
       const normalizedProfile = normalizeProfile(rest);
+      const usernameKey = normalizeUsernameKey(normalizedProfile.username);
 
       const { record, key, saltHex } = await buildEncryptedRecordFromPassword(
         password,
@@ -403,83 +517,135 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       derivedKeyRef.current = key;
       saltHexRef.current = saltHex;
+      activeUsernameKeyRef.current = usernameKey;
 
-      await writeEncryptedProfile(record);
+      const store = await loadProfileStore();
+      const nextStore: ProfileStorePayload = {
+        ...store,
+        profiles: {
+          ...store.profiles,
+          [usernameKey]: record,
+        },
+      };
+      await writeProfileStore(nextStore);
 
       setProfile(normalizedProfile);
       setIsLoggedIn(true);
     },
-    [readEncryptedProfilePayload, writeEncryptedProfile]
+    [loadProfileStore, writeProfileStore]
   );
 
   const logIn = useCallback(
     async ({ username, password }: { username: string; password: string }) => {
-      let storedValue: string | null = null;
+      const normalizedUsername = normalizeUsernameKey(username);
+      const store = await loadProfileStore();
 
-      storedValue = await readEncryptedProfilePayload();
+      const attemptDecrypt = async (record: EncryptedProfileRecord) => {
+        try {
+          const saltBytes = hexToBytes(record.salt);
+          const key = await deriveKey(password, saltBytes);
+          const decryptedProfile = decryptProfileWithKey(key, record);
+          if (!decryptedProfile) {
+            return null;
+          }
+          return { decryptedProfile, key };
+        } catch {
+          return null;
+        }
+      };
 
-      if (!storedValue) {
-        return false;
-      }
-
-      let parsedValue: unknown;
-      try {
-        parsedValue = JSON.parse(storedValue);
-      } catch (error) {
-        console.warn("Stored profile payload was not valid JSON", error);
-        return false;
-      }
-
-      const normalizedUsername = username.trim().toLowerCase();
-
-      if (isEncryptedRecord(parsedValue)) {
-        const saltBytes = hexToBytes(parsedValue.salt);
-        const key = await deriveKey(password, saltBytes);
-        const decryptedProfile = decryptProfileWithKey(key, parsedValue);
-
-        if (!decryptedProfile) {
+      const directRecord = store.profiles[normalizedUsername];
+      if (directRecord) {
+        const attempt = await attemptDecrypt(directRecord);
+        if (!attempt) {
           return false;
         }
 
-        if (decryptedProfile.username.trim().toLowerCase() !== normalizedUsername) {
+        if (
+          normalizeUsernameKey(attempt.decryptedProfile.username) !== normalizedUsername
+        ) {
           return false;
         }
 
-        derivedKeyRef.current = key;
-        saltHexRef.current = parsedValue.salt;
-        setProfile(decryptedProfile);
+        derivedKeyRef.current = attempt.key;
+        saltHexRef.current = directRecord.salt;
+        activeUsernameKeyRef.current = normalizedUsername;
+        setProfile(attempt.decryptedProfile);
         setIsLoggedIn(true);
         return true;
       }
 
-      if (isLegacyProfile(parsedValue)) {
-        const usernameMatches =
-          parsedValue.username.trim().toLowerCase() === normalizedUsername;
-        const passwordMatches = parsedValue.password === password;
+      if (store.legacyRecords && store.legacyRecords.length > 0) {
+        for (let i = 0; i < store.legacyRecords.length; i += 1) {
+          const legacyRecord = store.legacyRecords[i];
+          const attempt = await attemptDecrypt(legacyRecord);
+          if (!attempt) {
+            continue;
+          }
 
-        if (!usernameMatches || !passwordMatches) {
-          return false;
+          const matchedKey = normalizeUsernameKey(attempt.decryptedProfile.username);
+          if (matchedKey !== normalizedUsername) {
+            continue;
+          }
+
+          const nextStore: ProfileStorePayload = {
+            ...store,
+            profiles: {
+              ...store.profiles,
+              [matchedKey]: legacyRecord,
+            },
+            legacyRecords: removeIndex(store.legacyRecords, i),
+          };
+          await writeProfileStore(nextStore);
+
+          derivedKeyRef.current = attempt.key;
+          saltHexRef.current = legacyRecord.salt;
+          activeUsernameKeyRef.current = matchedKey;
+          setProfile(attempt.decryptedProfile);
+          setIsLoggedIn(true);
+          return true;
         }
+      }
 
-        const { password: _, ...legacyProfile } = parsedValue;
-        const normalizedProfile = normalizeProfile(legacyProfile);
-        const { record, key, saltHex } = await buildEncryptedRecordFromPassword(
-          password,
-          normalizedProfile
-        );
+      if (store.legacyPlainProfiles && store.legacyPlainProfiles.length > 0) {
+        for (let i = 0; i < store.legacyPlainProfiles.length; i += 1) {
+          const legacyProfile = store.legacyPlainProfiles[i];
+          if (
+            normalizeUsernameKey(legacyProfile.username) !== normalizedUsername ||
+            legacyProfile.password !== password
+          ) {
+            continue;
+          }
 
-        derivedKeyRef.current = key;
-        saltHexRef.current = saltHex;
-        await writeEncryptedProfile(record);
+          const { password: _, ...rest } = legacyProfile;
+          const normalizedProfile = normalizeProfile(rest);
+          const { record, key, saltHex } = await buildEncryptedRecordFromPassword(
+            password,
+            normalizedProfile
+          );
 
-        setProfile(normalizedProfile);
-        setIsLoggedIn(true);
-        return true;
+          const nextStore: ProfileStorePayload = {
+            ...store,
+            profiles: {
+              ...store.profiles,
+              [normalizedUsername]: record,
+            },
+            legacyPlainProfiles: removeIndex(store.legacyPlainProfiles, i),
+          };
+          await writeProfileStore(nextStore);
+
+          derivedKeyRef.current = key;
+          saltHexRef.current = saltHex;
+          activeUsernameKeyRef.current = normalizedUsername;
+          setProfile(normalizedProfile);
+          setIsLoggedIn(true);
+          return true;
+        }
       }
 
       return false;
     },
-    [readEncryptedProfilePayload, writeEncryptedProfile]
+    [loadProfileStore, writeProfileStore]
   );
 
   const logOut = useCallback(async () => {
@@ -487,6 +653,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
     clearDerivedKey(derivedKeyRef);
     saltHexRef.current = null;
+    activeUsernameKeyRef.current = null;
   }, []);
 
   const updateProfile = useCallback(

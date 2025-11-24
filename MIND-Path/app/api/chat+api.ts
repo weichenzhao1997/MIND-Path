@@ -2,7 +2,7 @@ import { google } from '@ai-sdk/google';
 import { streamText, UIMessage, convertToModelMessages, stepCountIs, hasToolCall } from 'ai';
 import { type IntakeData, CrisisIntakeData, EndSessionData, standardIntakeSchema, crisisIntakeSchema, endSessionSchema } from '../../lib/intakeSchema';
 import { matchResources } from '@/lib/rag/matching';
-
+import { generateActionPlan } from '@/lib/triage';
 import { guiding_instructions } from './system-prompt';
 
 
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
           // console log for now, will save to database once it's ready
           console.log('Standard Intake Data Received: ', parameters);
           // return a message to the model to confirm the action
-          return { success: true, message: 'User intake data has been saved. Now respond to the user with follow-up questions with the goal to populate more areas of the intake schema' };
+          return { success: true, saved_fields: Object.keys(parameters) };
         },
       },
       /**
@@ -41,69 +41,63 @@ export async function POST(req: Request) {
        * if the user's statements indicate a crisis.
        */
       report_crisis_scenario: {
-        description:
-          "Reports a crisis scenario if the user's statements indicate a risk of suicide, self-harm, danger to others, or psychosis. This tool MUST be used immediately upon detection of such a crisis.",
-        inputSchema: crisisIntakeSchema,
-        execute: async (parameters: CrisisIntakeData) => {
-          // In later implementations, this would trigger a crisis protocol,
-          // such as connecting the user to a crisis hotline, alerting a human operator, or displaying emergency contact information.
-          console.log('CRISIS DETECTED:', parameters);
-          return {
-            success: true,
-            message: 'Crisis protocol initiated. Acknowledge and provide emergency resources immediately.',
-          };
-        },
-      },
+              description: "URGENT: Reports suicide/self-harm risk.",
+              inputSchema: crisisIntakeSchema,
+              execute: async (parameters) => {
+                console.log('!!! CRISIS REPORTED !!!', parameters);
+                return { 
+                  success: true, 
+                  crisis_protocol: "active", 
+                  instruction: "Provide 988 number and urge user to call immediately." 
+                };
+              },
+            },
       /**
        * 
        */
 
-    end_session: {
-      description:
-        "Call this when the user says they'd want to get resources. After calling this tool, you MUST present the matched resources to the user in a friendly, helpful way. Format each resource with its title, organization, description, and clickable URL. Then provide a short summary and encouraging note.",
-      inputSchema: endSessionSchema,
-      execute: async (p: EndSessionData) => {
-        console.log('SESSION END:', p);
-        console.log('Latest intake data:', latestIntakeData);
-        if (latestIntakeData) {
-          try {
-            console.log('Matching resources for intake...');
-            
-            const matchedResources = await matchResources(latestIntakeData, {
-              limit: 5,
-              similarityThreshold: 0.4,
-            });
+end_session: {
+        description:
+          "Generates the Action Plan. You MUST pass the full collected intake summary here.",
+        inputSchema: endSessionSchema,
+        execute: async ({ intake_summary }: EndSessionData) => {
+          console.log('Generating plan for summary:', intake_summary);
+        try {
+            // 1. Run Triage Logic (The code we wrote earlier)
+            const actionPlan = await generateActionPlan(intake_summary);
 
-            console.log(`Matched ${matchedResources.length} resources`);
-            console.log('Resources:', JSON.stringify(matchedResources, null, 2));
-            
-            return { 
-              success: true, 
-              message: 'Resources have been matched. Present these resources to the user now:',
-              resources: matchedResources.map(r => ({
-                title: r.title,
-                org: r.org,
-                url: r.url,
-                short_desc: r.short_desc,
-              }))
+            // 2. Format for the LLM to read
+            return {
+              success: true,
+              // The LLM will read this JSON and turn it into the nice response defined in System Prompt
+              data: {
+                assessment: actionPlan.assessment ? {
+                  title: actionPlan.assessment.title,
+                  why: "Matches your primary concern.",
+                  link: actionPlan.assessment.url
+                } : "No specific assessment needed.",
+                
+                coping_skill: actionPlan.coping_skills[0] ? {
+                  title: actionPlan.coping_skills[0].title,
+                  // Use short_desc as fallback if 'content' is missing in DB
+                  instructions: actionPlan.coping_skills[0].short_desc 
+                } : null,
+                
+                reading: actionPlan.educational_resources.map(r => ({
+                  title: r.title,
+                  url: r.url
+                }))
+              }
             };
-          
           } catch (error) {
-            console.error('Error matching resources:', error);
+            console.error('Error generating plan:', error);
             return { 
-              success: true, 
-              message: 'Could not load resources. Provide a helpful summary and encouraging note.',
-              error: 'Could not load resources'
+              success: false, 
+              error: 'Failed to generate plan. Please offer general support.' 
             };
           }
-        }
-
-        return { 
-          success: true, 
-          message: 'No intake data collected. Provide a brief summary and encouraging note.'
-        };
+        },
       },
-    },
   },
   stopWhen: [stepCountIs(10)] // adjust end condition later
 });
