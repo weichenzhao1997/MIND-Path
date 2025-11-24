@@ -1,5 +1,5 @@
 // app/(tabs)/resourcesContent.tsx
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Text,
   View,
@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { searchResourcesBySymptom, Resource } from "@/utils/supabaseContent";
+import { searchResourcesBySymptom, Resource, searchResourcesFuzzy, fetchSymptomSynonyms } from "@/utils/supabaseContent";
 import { useAuth } from "@/context/AuthContext";
 
 /** ---------- Theme ---------- */
@@ -32,6 +32,21 @@ const ensureHttp = (url: string) =>
 export default function ResourcesContent() {
   const router = useRouter();
   const { isLoggedIn, profile, updateProfile } = useAuth();
+  const PAGE_SIZE = 5;
+  const STOPWORDS = useMemo(
+    () => new Set(["i", "and", "the", "a", "an", "to", "of", "in", "on", "for", "with", "feel", "am", "is", "are"]),
+    []
+  );
+  const [synonymMap, setSynonymMap] = useState<Record<string, string[]>>({});
+
+  const toTagText = (input: any): string => {
+    if (Array.isArray(input)) return input.join(" ").toLowerCase();
+    if (typeof input === "string") return input.toLowerCase();
+    return "";
+  };
+
+  const getVariants = (token: string): string[] =>
+    synonymMap[token] ? synonymMap[token] : [token];
 
   // symptom input state
   const [symptom, setSymptom] = useState("");
@@ -41,8 +56,26 @@ export default function ResourcesContent() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<Resource[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [lastQuery, setLastQuery] = useState("");
+  const [page, setPage] = useState(0);
   const [savingResourceId, setSavingResourceId] = useState<string | null>(null);
   const [removingResourceId, setRemovingResourceId] = useState<string | null>(null);
+
+  // load synonyms from Supabase
+  useEffect(() => {
+    let canceled = false;
+    (async () => {
+      try {
+        const map = await fetchSymptomSynonyms();
+        if (!canceled) setSynonymMap(map);
+      } catch (e) {
+        console.warn("Failed to load synonyms", e);
+      }
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, []);
 
   const savedResourceIds = useMemo(
     () =>
@@ -56,7 +89,8 @@ export default function ResourcesContent() {
 
   /** ---------- runSearch Supabase RPC ---------- */
   const runSearch = async () => {
-    const q = symptom.trim().toLowerCase();
+    const raw = symptom.trim();
+    const q = raw.toLowerCase();
     if (!q) return;
 
     setDidSearch(true);
@@ -64,8 +98,10 @@ export default function ResourcesContent() {
     setErrorMsg(null);
 
     try {
-      const rows = await searchResourcesBySymptom(q);
+      const rows = await searchResourcesFuzzy(q);
       setResults(rows);
+      setPage(0);
+      setLastQuery(raw);
     } catch (e: any) {
       setResults([]);
       setErrorMsg(e?.message ?? String(e));
@@ -73,6 +109,87 @@ export default function ResourcesContent() {
       setLoading(false);
     }
   };
+
+  const totalPages = useMemo(
+    () => (results.length === 0 ? 0 : Math.ceil(results.length / PAGE_SIZE)),
+    [results.length]
+  );
+  const orderedResults = useMemo(() => {
+    const tokens = lastQuery
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .map(t => t.trim())
+      .filter(t => t.length > 2 && !STOPWORDS.has(t));
+
+    if (tokens.length === 0) return results;
+
+    const seen = new Set<string>();
+    const bucketed: Resource[] = [];
+
+    for (const token of tokens) {
+      const variants = getVariants(token);
+      for (const r of results) {
+        if (seen.has(r.id)) continue;
+        const fullText = [
+          (r as any).title ?? "",
+          (r as any).short_desc ?? "",
+          (r as any).tags ?? "",
+          (r as any).symptom_tags ?? "",
+        ]
+          .join(" ")
+          .toLowerCase();
+        if (variants.some(v => fullText.includes(v))) {
+          bucketed.push(r);
+          seen.add(r.id);
+        }
+      }
+    }
+
+    // append any remaining results preserving original order
+    for (const r of results) {
+      if (!seen.has(r.id)) {
+        bucketed.push(r);
+        seen.add(r.id);
+      }
+    }
+    return bucketed;
+  }, [results, lastQuery, STOPWORDS]);
+
+  const pagedResults = useMemo(
+    () => orderedResults.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE),
+    [orderedResults, page]
+  );
+
+  const queryTokenCounts = useMemo(() => {
+    const rawTokens = lastQuery
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .map(t => t.trim())
+      .filter(t => t.length > 2 && !STOPWORDS.has(t));
+
+    // de-duplicate while preserving order
+    const seenTokens = new Set<string>();
+    const tokens: string[] = [];
+    for (const t of rawTokens) {
+      if (!seenTokens.has(t)) {
+        seenTokens.add(t);
+        tokens.push(t);
+      }
+    }
+
+    if (tokens.length === 0) return [];
+
+    return tokens
+      .map(token => {
+        const count = results.reduce((acc, r) => {
+          const tagText = `${toTagText((r as any).tags)} ${toTagText((r as any).symptom_tags)}`.trim();
+          const variants = getVariants(token);
+          return variants.some(v => tagText.includes(v)) ? acc + 1 : acc;
+        }, 0);
+        return { token, count };
+      })
+      .filter(entry => entry.count > 0);
+  }, [lastQuery, results, STOPWORDS, synonymMap]);
 
   const handleToggleResource = async (resource: Resource) => {
     const resourceId = resource.id?.trim();
@@ -179,12 +296,22 @@ export default function ResourcesContent() {
                 </Text>
               </View>
             ) : (
-              results.map(r => {
-                const isSaved = savedResourceIds.has(r.id);
-                const isSaving = savingResourceId === r.id;
-                const isRemoving = removingResourceId === r.id;
-                return (
-                  <View key={r.id} style={styles.card}>
+              <>
+                <Text style={styles.resultHint}>
+                  Showing {results.length} results for "{lastQuery}"
+                  {queryTokenCounts.length > 0
+                    ? `; matches — ${queryTokenCounts
+                      .map(entry => `${entry.token}: ${entry.count}`)
+                      .join(", ")}`
+                    : " (sorted by relevance)"}
+                  .
+                </Text>
+                {pagedResults.map(r => {
+                  const isSaved = savedResourceIds.has(r.id);
+                  const isSaving = savingResourceId === r.id;
+                  const isRemoving = removingResourceId === r.id;
+                  return (
+                    <View key={r.id} style={styles.card}>
                     {/* Title */}
                     <Text numberOfLines={2} style={styles.title}>
                       {r.title}
@@ -231,10 +358,34 @@ export default function ResourcesContent() {
                               ? "Saved — tap to remove"
                               : "Save to profile"}
                       </Text>
+                      </Pressable>
+                    </View>
+                  );
+                })}
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <View style={styles.paginationRow}>
+                    <Pressable
+                      style={[styles.pageBtn, page === 0 && styles.pageBtnDisabled]}
+                      disabled={page === 0}
+                      onPress={() => setPage(p => Math.max(0, p - 1))}
+                    >
+                      <Text style={styles.pageBtnText}>Previous</Text>
+                    </Pressable>
+                    <Text style={styles.pageInfo}>
+                      Page {page + 1} of {totalPages}
+                    </Text>
+                    <Pressable
+                      style={[styles.pageBtn, page >= totalPages - 1 && styles.pageBtnDisabled]}
+                      disabled={page >= totalPages - 1}
+                      onPress={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                    >
+                      <Text style={styles.pageBtnText}>Next</Text>
                     </Pressable>
                   </View>
-                );
-              })
+                )}
+              </>
             )}
           </>
         )}
@@ -396,5 +547,35 @@ const styles = StyleSheet.create({
     color: "#b91c1c",
     fontSize: 15,
     textAlign: "center",
+  },
+
+  paginationRow: {
+    marginTop: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  pageBtn: {
+    flex: 1,
+    backgroundColor: GREEN_TEXT,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  pageBtnDisabled: {
+    backgroundColor: GREEN_BORDER,
+  },
+  pageBtnText: {
+    color: "#ffffff",
+    fontWeight: "700",
+  },
+  pageInfo: {
+    color: GREEN_TEXT,
+    fontWeight: "700",
+  },
+  resultHint: {
+    color: GREEN_TEXT_SOFT,
+    marginBottom: 8,
   },
 });
