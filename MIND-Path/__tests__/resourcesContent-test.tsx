@@ -11,12 +11,12 @@ import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import ResourcesContent from "@/app/(tabs)/resourcesContent";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "expo-router";
-import { searchResourcesBySymptom } from "@/utils/supabaseContent";
+import { searchResourcesFuzzy, fetchSymptomSynonyms } from "@/utils/supabaseContent";
 
 jest.mock("react-native-safe-area-context", () => {
   const actual = jest.requireActual("react-native-safe-area-context");
   return {
-    ...actual,
+    ...(actual as Record<string, any>),
     SafeAreaView: ({ children }: { children: React.ReactNode }) => (
       <>{children}</>
     ),
@@ -32,12 +32,15 @@ jest.mock("@/context/AuthContext", () => ({
 }));
 
 jest.mock("@/utils/supabaseContent", () => ({
-  searchResourcesBySymptom: jest.fn(),
+  __esModule: true,
+  searchResourcesFuzzy: jest.fn(),
+  fetchSymptomSynonyms: jest.fn(),
 }));
 
 const useAuthMock = useAuth as jest.Mock;
 const useRouterMock = useRouter as jest.Mock;
-const searchResourcesBySymptomMock = searchResourcesBySymptom as jest.Mock;
+const searchResourcesFuzzyMock = searchResourcesFuzzy as jest.MockedFunction<typeof searchResourcesFuzzy>;
+const fetchSymptomSynonymsMock = fetchSymptomSynonyms as jest.MockedFunction<typeof fetchSymptomSynonyms>;
 
 const baseProfile = {
   username: "sam",
@@ -57,7 +60,8 @@ describe("<ResourcesContent />", () => {
     useRouterMock.mockReturnValue({
       push: pushMock,
     });
-    searchResourcesBySymptomMock.mockResolvedValue([
+    fetchSymptomSynonymsMock.mockResolvedValue({});
+    searchResourcesFuzzyMock.mockResolvedValue([
       {
         id: "res-1",
         title: "Breathing 101",
@@ -65,7 +69,7 @@ describe("<ResourcesContent />", () => {
         org: "Mind Path",
         url: "example.com",
       },
-    ]);
+    ] as any);
   });
 
   afterEach(() => {
@@ -82,7 +86,7 @@ describe("<ResourcesContent />", () => {
     );
     fireEvent.press(utils.getByText("Search"));
     await waitFor(() =>
-      expect(searchResourcesBySymptomMock).toHaveBeenCalledWith(
+      expect(searchResourcesFuzzyMock).toHaveBeenCalledWith(
         value.trim().toLowerCase()
       )
     );

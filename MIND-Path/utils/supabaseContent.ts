@@ -121,3 +121,12 @@ export async function pingSupabase(): Promise<"ok"> {
   if (error) throw error;
   return "ok";
 }
+
+export default {
+  supabase,
+  searchResourcesBySymptom,
+  searchResourcesFuzzy,
+  fetchSymptomSynonyms,
+  fetchResourcesByIds,
+  pingSupabase,
+};
