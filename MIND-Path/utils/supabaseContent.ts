@@ -62,7 +62,7 @@ export async function searchResourcesFuzzy(q: string) {
   }));
 }
 
-/** Fetch synonym map from symptom_synonyms table */
+// fetch synonym map from symptom_synonyms table
 export async function fetchSymptomSynonyms(): Promise<Record<string, string[]>> {
   const { data, error } = await supabase
     .from("symptom_synonyms")
@@ -79,7 +79,6 @@ export async function fetchSymptomSynonyms(): Promise<Record<string, string[]>> 
   });
   return map;
 }
-
 
 export async function fetchResourcesByIds(
   ids: readonly (string | number)[]
