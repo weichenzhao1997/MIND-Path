@@ -63,7 +63,7 @@ export async function searchResourcesFuzzy(q: string) {
 }
 
 // fetch synonym map from symptom_synonyms table
-export async function fetchSymptomSynonyms(): Promise<Record<string, string[]>> {
+export const fetchSymptomSynonyms = async (): Promise<Record<string, string[]>> => {
   const { data, error } = await supabase
     .from("symptom_synonyms")
     .select("key, variants");
@@ -78,7 +78,7 @@ export async function fetchSymptomSynonyms(): Promise<Record<string, string[]>> 
     map[key] = Array.from(new Set([key, ...variants]));
   });
   return map;
-}
+};
 
 export async function fetchResourcesByIds(
   ids: readonly (string | number)[]

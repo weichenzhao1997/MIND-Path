@@ -13,7 +13,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { searchResourcesBySymptom, Resource, searchResourcesFuzzy, fetchSymptomSynonyms } from "@/utils/supabaseContent";
+import { Resource, searchResourcesFuzzy } from "@/utils/supabaseContent";
+import { fetchSymptomSynonyms } from "@/utils/supabaseContent";
 import { useAuth } from "@/context/AuthContext";
 
 /** ---------- Theme ---------- */
