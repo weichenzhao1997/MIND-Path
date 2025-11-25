@@ -27,6 +27,11 @@ export type Resource = {
   url: string;
 };
 
+export type SynonymRow = {
+  key: string;
+  variants: string[] | null;
+};
+
 // RPC
 export async function searchResourcesBySymptom(q: string): Promise<Resource[]> {
   const { data, error } = await supabase.rpc("search_resources_by_symptom", { q });
@@ -39,6 +44,41 @@ export async function searchResourcesBySymptom(q: string): Promise<Resource[]> {
     url: r.url,
   }));
 }
+
+export async function searchResourcesFuzzy(q: string) {
+  const { data, error } = await supabase.rpc("search_resources_fuzzy", {
+    q,
+    limit_count: 50,
+    min_sim: 0.15,
+  });
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    title: r.title,
+    type: r.type ?? "Resource",
+    org: r.org ?? null,
+    url: r.url ?? "",
+    similarity: r.similarity,
+  }));
+}
+
+// fetch synonym map from symptom_synonyms table
+export const fetchSymptomSynonyms = async (): Promise<Record<string, string[]>> => {
+  const { data, error } = await supabase
+    .from("symptom_synonyms")
+    .select("key, variants");
+
+  if (error) throw error;
+
+  const map: Record<string, string[]> = {};
+  (data ?? []).forEach((row: SynonymRow) => {
+    if (!row?.key) return;
+    const key = row.key.toLowerCase().trim();
+    const variants = (row.variants ?? []).map(v => v.toLowerCase().trim()).filter(Boolean);
+    map[key] = Array.from(new Set([key, ...variants]));
+  });
+  return map;
+};
 
 export async function fetchResourcesByIds(
   ids: readonly (string | number)[]
@@ -81,3 +121,12 @@ export async function pingSupabase(): Promise<"ok"> {
   if (error) throw error;
   return "ok";
 }
+
+export default {
+  supabase,
+  searchResourcesBySymptom,
+  searchResourcesFuzzy,
+  fetchSymptomSynonyms,
+  fetchResourcesByIds,
+  pingSupabase,
+};
