@@ -658,13 +658,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateProfile = useCallback(
     async (profileUpdates: Partial<StoredUserProfile>) => {
-      const baseProfile = profile ?? EMPTY_PROFILE;
-      const updatedProfile = normalizeProfile({ ...baseProfile, ...profileUpdates });
+      let nextProfile: StoredUserProfile | null = null;
 
-      setProfile(updatedProfile);
-      await persistEncryptedProfile(updatedProfile);
+      // Functional set avoids races when multiple updates happen back-to-back.
+      setProfile(prevProfile => {
+        const baseProfile = prevProfile ?? EMPTY_PROFILE;
+        const merged = normalizeProfile({ ...baseProfile, ...profileUpdates });
+        nextProfile = merged;
+        return merged;
+      });
+
+      if (!nextProfile) {
+        nextProfile = normalizeProfile({ ...EMPTY_PROFILE, ...profileUpdates });
+      }
+
+      await persistEncryptedProfile(nextProfile);
     },
-    [profile, persistEncryptedProfile]
+    [persistEncryptedProfile]
   );
 
   const value = useMemo<AuthContextValue>(

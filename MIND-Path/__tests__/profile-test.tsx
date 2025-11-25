@@ -114,6 +114,33 @@ describe("<ProfileScreen />", () => {
     fetchResourcesByIdsMock.mockReset();
   });
 
+  test("renders multiple saved resources in order", async () => {
+    useAuthMock.mockReturnValue({
+      isLoggedIn: true,
+      profile: {
+        ...mockProfile,
+        recommendedResourceIds: ["res-1", "res-2", "res-3"],
+      },
+      logOut: logOutMock,
+      updateProfile: updateProfileMock,
+    });
+
+    fetchResourcesByIdsMock.mockResolvedValueOnce([
+      { id: "res-1", title: "First", type: "article", org: "Org A", url: "https://a.test" },
+      { id: "res-2", title: "Second", type: "video", org: "Org B", url: "https://b.test" },
+      { id: "res-3", title: "Third", type: "podcast", org: "Org C", url: "https://c.test" },
+    ]);
+
+    const utils = render(<ProfileScreen />);
+
+    await waitFor(() => {
+      expect(fetchResourcesByIdsMock).toHaveBeenCalledWith(["res-1", "res-2", "res-3"]);
+      expect(utils.getByText("First")).toBeTruthy();
+      expect(utils.getByText("Second")).toBeTruthy();
+      expect(utils.getByText("Third")).toBeTruthy();
+    });
+  });
+
   test("shows profile data, including zipcode inline", async () => {
     const utils = render(<ProfileScreen />);
 
