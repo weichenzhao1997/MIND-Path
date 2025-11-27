@@ -5,15 +5,22 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   ActivityIndicator,
   Linking,
+  Switch,
+  Platform,
 } from "react-native";
+import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import * as Calendar from "expo-calendar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import LoginScreen from "./login";
 import {
   fetchProvidersByIds,
+  fetchProviderAddress,
   type ProviderRow,
+  type ProviderAddress,
 } from "@/utils/supabaseProvider";
 import {
   fetchResourcesByIds,
@@ -29,6 +36,14 @@ const PLACEHOLDER = "#3a6a54";
 
 const ensureHttp = (url: string) =>
   /^https?:\/\//i.test(url) ? url : `https://${url}`;
+
+type Appointment = {
+  id: string;
+  title: string;
+  when: string;
+  startAt?: string;
+  notes?: string;
+};
 
 /** ---------- Profile clinic card colors ---------- */
 const PEACH_LIGHT = "#FEF3E7";
@@ -87,6 +102,31 @@ function ProfileContent() {
   const [clinicError, setClinicError] = useState<string | null>(null);
   const [removingClinicId, setRemovingClinicId] = useState<string | null>(null);
   const [clinicEditMode, setClinicEditMode] = useState(false);
+  const [appointmentsByProvider, setAppointmentsByProvider] = useState<Record<string, Appointment[]>>(
+    profile?.appointmentsByProvider ?? {}
+  );
+  const [appointmentModalProvider, setAppointmentModalProvider] = useState<ProviderRow | null>(null);
+  const [appointmentTitle, setAppointmentTitle] = useState("");
+  const [appointmentDate, setAppointmentDate] = useState<Date>(new Date());
+  const [appointmentDateText, setAppointmentDateText] = useState("");
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [appointmentNotes, setAppointmentNotes] = useState("");
+  const [syncCalendar, setSyncCalendar] = useState(false);
+  const [editingAppointmentId, setEditingAppointmentId] = useState<string | null>(null);
+  const [removingAppointmentKey, setRemovingAppointmentKey] = useState<string | null>(null);
+
+  const formatDateTime = useCallback((value: Date) => {
+    try {
+      return value.toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    } catch {
+      return value.toISOString();
+    }
+  }, []);
 
   useEffect(() => {
     if (normalizedResourceIds.length === 0) {
@@ -174,6 +214,10 @@ function ProfileContent() {
     }
   }, [clinicEditMode, clinicIds.length]);
 
+  useEffect(() => {
+    setAppointmentsByProvider(profile?.appointmentsByProvider ?? {});
+  }, [profile?.appointmentsByProvider]);
+
   const handleRemoveResource = useCallback(
     async (resourceId?: string | null) => {
       const trimmedId = resourceId?.trim();
@@ -250,6 +294,164 @@ function ProfileContent() {
       console.warn("Failed to open resource URL", error);
     });
   }, []);
+
+  const closeAppointmentModal = () => {
+    setAppointmentModalProvider(null);
+    setAppointmentTitle("");
+    setAppointmentNotes("");
+    setShowDatePicker(false);
+    setAppointmentDateText("");
+    setSyncCalendar(false);
+    setEditingAppointmentId(null);
+    setRemovingAppointmentKey(null);
+  };
+
+  const openAddAppointment = (provider: ProviderRow) => {
+    setAppointmentModalProvider(provider);
+    setAppointmentDate(new Date());
+    setAppointmentDateText("");
+    setShowDatePicker(false);
+    setSyncCalendar(false);
+    setEditingAppointmentId(null);
+  };
+
+  const openEditAppointment = (provider: ProviderRow, appt: Appointment) => {
+    setAppointmentModalProvider(provider);
+    setAppointmentTitle(appt.title);
+    setAppointmentNotes(appt.notes ?? "");
+    setAppointmentDate(appt.startAt ? new Date(appt.startAt) : new Date());
+    setAppointmentDateText(Platform.OS === "web" ? appt.when : "");
+    setShowDatePicker(false);
+    setSyncCalendar(false);
+    setEditingAppointmentId(appt.id);
+    setRemovingAppointmentKey(null);
+  };
+
+  const ensureCalendarPermission = useCallback(async () => {
+    const { status } = await Calendar.requestCalendarPermissionsAsync();
+    return status === "granted";
+  }, []);
+
+  const getCalendarId = useCallback(async () => {
+    try {
+      const defaultCal = await Calendar.getDefaultCalendarAsync();
+      if (defaultCal?.id) return defaultCal.id;
+    } catch {}
+    try {
+      const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+      const firstEventCal = calendars.find(cal => cal.allowsModifications);
+      return firstEventCal?.id ?? calendars[0]?.id ?? null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const handleSaveAppointment = async () => {
+    const providerId =
+      appointmentModalProvider && typeof appointmentModalProvider.provider_id === "number"
+        ? appointmentModalProvider.provider_id.toString()
+        : null;
+    if (!providerId) {
+      closeAppointmentModal();
+      return;
+    }
+    const title = appointmentTitle.trim() || "Appointment";
+    const when =
+      Platform.OS === "web"
+        ? appointmentDateText.trim() || formatDateTime(appointmentDate)
+        : formatDateTime(appointmentDate);
+    const notes = appointmentNotes.trim();
+    let providerLocation = appointmentModalProvider
+      ? [
+          appointmentModalProvider.basic_name,
+          appointmentModalProvider.city,
+          appointmentModalProvider.state,
+        ]
+          .filter(part => (part ? String(part).trim().length > 0 : false))
+          .join(", ")
+      : "";
+
+    if (syncCalendar && Platform.OS !== "web") {
+      try {
+        const granted = await ensureCalendarPermission();
+        if (granted) {
+          const calendarId = await getCalendarId();
+          if (calendarId) {
+            const startDate = appointmentDate;
+            const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+            if (appointmentModalProvider?.provider_id != null) {
+              try {
+                const address: ProviderAddress | null = await fetchProviderAddress(
+                  appointmentModalProvider.provider_id
+                );
+                if (address) {
+                  const locationParts = [
+                    appointmentModalProvider.basic_name,
+                    address.address_1,
+                    address.address_2,
+                    address.city,
+                    address.state,
+                    address.postal_code,
+                  ]
+                    .map(part => (part ? String(part).trim() : ""))
+                    .filter(Boolean);
+                  if (locationParts.length > 0) {
+                    providerLocation = locationParts.join(", ");
+                  }
+                }
+              } catch (error) {
+                console.warn("Failed to fetch provider address", error);
+              }
+            }
+            await Calendar.createEventAsync(calendarId, {
+              title,
+              startDate,
+              endDate,
+              location: providerLocation || undefined,
+              notes: notes || undefined,
+            });
+          }
+        }
+      } catch (error) {
+        console.warn("Failed to sync calendar event", error);
+      }
+    }
+
+    setAppointmentsByProvider(prev => {
+      const nextList = prev[providerId] ?? [];
+      const next: Appointment = {
+        id: editingAppointmentId ?? `${providerId}-${Date.now()}`,
+        title,
+        when,
+        startAt: appointmentDate.toISOString(),
+        notes: notes || undefined,
+      };
+
+      const updatedList = editingAppointmentId
+        ? nextList.some(item => item.id === editingAppointmentId)
+          ? nextList.map(item => (item.id === editingAppointmentId ? next : item))
+          : [next, ...nextList]
+        : [next, ...nextList];
+
+      const nextMap = { ...prev, [providerId]: updatedList };
+      void updateProfile({ appointmentsByProvider: nextMap });
+      return nextMap;
+    });
+    closeAppointmentModal();
+  };
+
+  const handleRemoveAppointment = (providerKey: string, appointmentId: string) => {
+    const removalKey = `${providerKey}::${appointmentId}`;
+    setRemovingAppointmentKey(removalKey);
+    setAppointmentsByProvider(prev => {
+      const list = prev[providerKey] ?? [];
+      const filtered = list.filter(item => item.id !== appointmentId);
+      const nextMap = { ...prev, [providerKey]: filtered };
+      void updateProfile({ appointmentsByProvider: nextMap });
+      return nextMap;
+    });
+    setRemovingAppointmentKey(null);
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#f3f4f6" }}>
@@ -547,13 +749,63 @@ function ProfileContent() {
                       Phone: {row.phone}
                     </Text>
                   ) : null}
+                  {(appointmentsByProvider[key] ?? []).length > 0 ? (
+                    <View style={styles.appointmentList}>
+                      {(appointmentsByProvider[key] ?? []).map(appt => (
+                        <Pressable
+                          key={appt.id}
+                          style={styles.appointmentChip}
+                          accessibilityRole="button"
+                          onPress={() => openEditAppointment(row, appt)}
+                          testID={`appointment-chip-${key}-${appt.id}`}
+                        >
+                          <View style={styles.appointmentChipRow}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.appointmentTitle} numberOfLines={1}>
+                                {appt.title}
+                              </Text>
+                              <Text style={styles.appointmentMeta} numberOfLines={1}>
+                                {appt.when}
+                              </Text>
+                              {appt.notes ? (
+                                <Text style={styles.appointmentNotes} numberOfLines={2}>
+                                  {appt.notes}
+                                </Text>
+                              ) : null}
+                            </View>
+                            {clinicEditMode ? (
+                              <Pressable
+                                accessibilityRole="button"
+                                onPress={() => handleRemoveAppointment(key, appt.id)}
+                                disabled={removingAppointmentKey === `${key}::${appt.id}`}
+                                style={[
+                                  styles.removeSavedBtn,
+                                  styles.removeAppointmentBtnInside,
+                                  removingAppointmentKey === `${key}::${appt.id}` &&
+                                    styles.removeSavedBtnDisabled,
+                                ]}
+                              >
+                                <Text style={styles.removeSavedBtnText}>
+                                  {removingAppointmentKey === `${key}::${appt.id}`
+                                    ? "Removing..."
+                                    : "Remove"}
+                                </Text>
+                              </Pressable>
+                            ) : null}
+                          </View>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : null}
                 </View>
                 <Pressable
                   style={styles.apptBtn}
                   accessibilityRole="button"
-                  onPress={() => togglePick(key)}
+                  onPress={() => openAddAppointment(row)}
                 >
-                  <Text style={styles.apptBtnText}>Appointment time</Text>
+                  <Text style={styles.apptBtnText}>
+                    Add appointment
+                  </Text>
                 </Pressable>
               </View>
             );
@@ -568,6 +820,116 @@ function ProfileContent() {
           <Text style={styles.logoutText}>Log out</Text>
         </Pressable>
       </ScrollView>
+      {appointmentModalProvider ? (
+        <View style={styles.modalOverlay} pointerEvents="auto">
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Edit appointment</Text>
+            <Text style={styles.modalSubtitle} numberOfLines={2}>
+              {appointmentModalProvider.basic_name ?? "Provider"}
+            </Text>
+
+            <View style={styles.modalField}>
+              <Text style={styles.modalLabel}>Title</Text>
+              <TextInput
+                value={appointmentTitle}
+                onChangeText={setAppointmentTitle}
+                placeholder="Check-in with provider"
+                placeholderTextColor={PLACEHOLDER}
+                style={styles.modalInput}
+              />
+            </View>
+
+            <View style={styles.modalField}>
+              <Text style={styles.modalLabel}>Date & time</Text>
+              {Platform.OS === "web" ? (
+                <TextInput
+                  value={appointmentDateText}
+                  onChangeText={setAppointmentDateText}
+                  placeholder="e.g., May 5, 3:00 PM"
+                  placeholderTextColor={PLACEHOLDER}
+                  style={styles.modalInput}
+                  testID="appointment-date-text"
+                />
+              ) : (
+                <>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => setShowDatePicker(true)}
+                    style={[styles.modalInput, styles.modalPickerBtn]}
+                    testID="appointment-date-button"
+                  >
+                    <Text style={styles.modalPickerText}>{formatDateTime(appointmentDate)}</Text>
+                  </Pressable>
+                  {showDatePicker ? (
+                    <DateTimePicker
+                      testID="appointment-datetime-picker"
+                      value={appointmentDate}
+                      mode="datetime"
+                      display="default"
+                      onChange={(event: DateTimePickerEvent, date?: Date) => {
+                        if (event.type === "set" && date) {
+                          setAppointmentDate(date);
+                        }
+                        setShowDatePicker(false);
+                      }}
+                    />
+                  ) : null}
+                </>
+              )}
+            </View>
+
+            <View style={[styles.modalField, styles.modalToggleRow]}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalLabel}>Sync with calendar</Text>
+                <Text style={styles.modalHelper}>
+                  Save to your device calendar (mobile only).
+                </Text>
+              </View>
+              <Switch
+                value={syncCalendar}
+                onValueChange={setSyncCalendar}
+                thumbColor={syncCalendar ? GREEN_MAIN : "#ffffff"}
+                trackColor={{ false: "#d1d5db", true: GREEN_BORDER }}
+                disabled={Platform.OS === "web"}
+                testID="sync-calendar-switch"
+              />
+            </View>
+
+            <View style={styles.modalField}>
+              <Text style={styles.modalLabel}>Notes (optional)</Text>
+              <TextInput
+                value={appointmentNotes}
+                onChangeText={setAppointmentNotes}
+                placeholder="Add prep or follow-up details"
+                placeholderTextColor={PLACEHOLDER}
+                style={[styles.modalInput, styles.modalInputMultiline]}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+              />
+            </View>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={closeAppointmentModal}
+                style={[styles.modalButton, styles.modalButtonSecondary]}
+              >
+                <Text style={[styles.modalButtonText, styles.modalButtonTextSecondary]}>
+                  Cancel
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={handleSaveAppointment}
+                style={styles.modalButton}
+              >
+                <Text style={styles.modalButtonText}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -760,6 +1122,38 @@ const styles = StyleSheet.create({
     color: GREEN_TEXT,
     fontWeight: "700",
   },
+  appointmentList: {
+    gap: 8,
+    marginTop: 8,
+  },
+  appointmentChip: {
+    backgroundColor: "#fffaf5",
+    borderColor: "rgba(92,66,53,0.2)",
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 2,
+    overflow: "hidden",
+  },
+  appointmentChipRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  appointmentTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#4c3428",
+  },
+  appointmentMeta: {
+    fontSize: 12,
+    color: "#7a6f68",
+  },
+  appointmentNotes: {
+    fontSize: 12,
+    color: "#6b7280",
+  },
   sectionHeaderRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -828,6 +1222,18 @@ const styles = StyleSheet.create({
   },
   removeSavedBtnDisabled: {
     opacity: 0.5,
+  },
+  removeAppointmentBtn: {
+    minWidth: undefined,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    alignSelf: "flex-start",
+  },
+  removeAppointmentBtnInside: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    minWidth: undefined,
+    alignSelf: "flex-start",
   },
   removeSavedBtnText: {
     fontSize: 12,
@@ -914,5 +1320,91 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 14,
     fontWeight: "700",
+  },
+  modalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(15,23,42,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+  },
+  modalCard: {
+    width: "100%",
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+    borderWidth: 1,
+    borderColor: GREEN_BORDER,
+    gap: 12,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: GREEN_TEXT,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: "#6b7280",
+  },
+  modalField: {
+    gap: 6,
+  },
+  modalLabel: {
+    fontSize: 12,
+    color: "#374151",
+    fontWeight: "700",
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: GREEN_BORDER,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: GREEN_LIGHT,
+    color: "#111827",
+  },
+  modalPickerBtn: {
+    justifyContent: "center",
+  },
+  modalPickerText: {
+    color: GREEN_TEXT,
+    fontWeight: "700",
+  },
+  modalInputMultiline: {
+    minHeight: 70,
+  },
+  modalToggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  modalHelper: {
+    fontSize: 11,
+    color: "#6b7280",
+    marginTop: 2,
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "flex-end",
+  },
+  modalButton: {
+    backgroundColor: GREEN_MAIN,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  modalButtonSecondary: {
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: GREEN_BORDER,
+  },
+  modalButtonText: {
+    color: "#ffffff",
+    fontWeight: "700",
+  },
+  modalButtonTextSecondary: {
+    color: GREEN_TEXT,
   },
 });

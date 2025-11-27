@@ -36,6 +36,15 @@ type StoredUserProfile = {
   previousChatSessionIds: string[];
   recommendedResourceIds: string[];
   clinicIds: string[];
+  appointmentsByProvider: Record<string, StoredAppointment[]>;
+};
+
+type StoredAppointment = {
+  id: string;
+  title: string;
+  when: string;
+  startAt?: string | null;
+  notes?: string | null;
 };
 
 type CreateAccountPayload = StoredUserProfile & {
@@ -58,6 +67,7 @@ const EMPTY_PROFILE: StoredUserProfile = {
   previousChatSessionIds: [],
   recommendedResourceIds: [],
   clinicIds: [],
+  appointmentsByProvider: {},
 };
 
 type EncryptedProfileRecord = {
@@ -109,6 +119,7 @@ function normalizeProfile(data: Partial<StoredUserProfile>): StoredUserProfile {
     previousChatSessionIds: data.previousChatSessionIds ?? [],
     recommendedResourceIds: data.recommendedResourceIds ?? [],
     clinicIds: data.clinicIds ?? [],
+    appointmentsByProvider: data.appointmentsByProvider ?? {},
   };
 }
 

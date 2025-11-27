@@ -14,6 +14,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useSegments } from "expo-router";
 import { fetchProvidersByIds } from "@/utils/supabaseProvider";
 import { fetchResourcesByIds } from "@/utils/supabaseContent";
+import * as Calendar from "expo-calendar";
 
 jest.mock("react-native-safe-area-context", () => {
   const actual = jest.requireActual("react-native-safe-area-context");
@@ -39,16 +40,40 @@ jest.mock("@/context/AuthContext", () => ({
 
 jest.mock("@/utils/supabaseProvider", () => ({
   fetchProvidersByIds: jest.fn(),
+  fetchProviderAddress: jest.fn(),
 }));
 
 jest.mock("@/utils/supabaseContent", () => ({
   fetchResourcesByIds: jest.fn(),
 }));
 
+jest.mock("@react-native-community/datetimepicker", () => {
+  const React = require("react");
+  const { Text } = require("react-native");
+  return ({ onChange, value, testID }: any) => (
+    <Text
+      testID={testID || "mock-datetime-picker"}
+      onPress={() => onChange && onChange({ type: "set" }, new Date("2025-05-05T15:00:00Z"))}
+    >
+      picker
+    </Text>
+  );
+});
+
+jest.mock("expo-calendar", () => ({
+  requestCalendarPermissionsAsync: jest.fn(() => Promise.resolve({ status: "granted" })),
+  getDefaultCalendarAsync: jest.fn(() => Promise.resolve({ id: "default-cal" })),
+  getCalendarsAsync: jest.fn(() => Promise.resolve([])),
+  createEventAsync: jest.fn(() => Promise.resolve("event-1")),
+  EntityTypes: { EVENT: "event" },
+}));
+
 const useAuthMock = useAuth as jest.Mock;
 const useSegmentsMock = useSegments as jest.Mock;
 const fetchProvidersByIdsMock = fetchProvidersByIds as jest.Mock;
+const fetchProviderAddressMock = jest.requireMock("@/utils/supabaseProvider").fetchProviderAddress as jest.Mock;
 const fetchResourcesByIdsMock = fetchResourcesByIds as jest.Mock;
+const createEventAsyncMock = Calendar.createEventAsync as jest.Mock;
 
 const mockProfile = {
   username: "joey",
@@ -56,6 +81,7 @@ const mockProfile = {
   previousChatSessionIds: ["chat-1", "chat-2"],
   recommendedResourceIds: ["res-1"],
   clinicIds: ["123"],
+  appointmentsByProvider: {},
 };
 
 describe("<ProfileScreen />", () => {
@@ -96,6 +122,15 @@ describe("<ProfileScreen />", () => {
         distance_m: null,
       },
     ]);
+    fetchProviderAddressMock.mockResolvedValue({
+      provider_id: 123,
+      address_type: "practice",
+      address_1: "123 Main St",
+      address_2: null,
+      city: "Los Angeles",
+      state: "CA",
+      postal_code: "90001",
+    });
     fetchResourcesByIdsMock.mockResolvedValue([
       {
         id: "res-1",
@@ -244,6 +279,52 @@ describe("<ProfileScreen />", () => {
     });
   });
 
+  test("add appointment opens modal and saves details", async () => {
+    const utils = render(<ProfileScreen />);
+
+    await waitFor(() => {
+      expect(utils.getByText("Mindful Clinic")).toBeTruthy();
+    });
+
+    fireEvent.press(utils.getByText("Add appointment"));
+
+    const titleInput = utils.getByPlaceholderText("Check-in with provider");
+
+    fireEvent.changeText(titleInput, "Follow-up");
+    fireEvent.press(utils.getByTestId("appointment-date-button"));
+    fireEvent.press(utils.getByTestId("appointment-datetime-picker"));
+    fireEvent.press(utils.getByText("Save"));
+
+    await waitFor(() => {
+      expect(utils.getByText("Follow-up")).toBeTruthy();
+      expect(utils.getByText(/May 5/)).toBeTruthy();
+    });
+  });
+
+  test("sync calendar creates event with provider location", async () => {
+    const utils = render(<ProfileScreen />);
+
+    await waitFor(() => {
+      expect(utils.getByText("Mindful Clinic")).toBeTruthy();
+    });
+
+    fireEvent.press(utils.getByText("Add appointment"));
+    fireEvent.changeText(utils.getByPlaceholderText("Check-in with provider"), "Calendar Sync");
+    fireEvent.press(utils.getByTestId("appointment-date-button"));
+    fireEvent.press(utils.getByTestId("appointment-datetime-picker"));
+    fireEvent(utils.getByTestId("sync-calendar-switch"), "valueChange", true);
+    fireEvent.press(utils.getByText("Save"));
+
+    await waitFor(() => {
+      expect(createEventAsyncMock).toHaveBeenCalledWith(
+        "default-cal",
+        expect.objectContaining({
+          location: "Mindful Clinic, 123 Main St, Los Angeles, CA, 90001",
+        })
+      );
+    });
+  });
+
   test("tapping a saved resource opens its URL without toggling selection", async () => {
     fetchResourcesByIdsMock.mockResolvedValueOnce([
       { id: "res-1", title: "Calm Breathing Guide", type: "article", org: "Mindful Org", url: "example.com" },
@@ -276,5 +357,26 @@ describe("<ProfileScreen />", () => {
         ? resourceCard.props.style[1].backgroundColor
         : null;
     expect(updatedBg).toBe(initialBg);
+  });
+
+  test("tapping an appointment chip reopens editor and saves changes", async () => {
+    const utils = render(<ProfileScreen />);
+
+    await waitFor(() => expect(utils.getByText("Mindful Clinic")).toBeTruthy());
+
+    fireEvent.press(utils.getByText("Add appointment"));
+    fireEvent.changeText(utils.getByPlaceholderText("Check-in with provider"), "Initial Appt");
+    fireEvent.press(utils.getByTestId("appointment-date-button"));
+    fireEvent.press(utils.getByTestId("appointment-datetime-picker"));
+    fireEvent.press(utils.getByText("Save"));
+
+    await waitFor(() => expect(utils.getByText("Initial Appt")).toBeTruthy());
+
+    fireEvent.press(utils.getByText("Initial Appt"));
+    const titleInput = utils.getByPlaceholderText("Check-in with provider");
+    fireEvent.changeText(titleInput, "Updated Appt");
+    fireEvent.press(utils.getByText("Save"));
+
+    await waitFor(() => expect(utils.getByText("Updated Appt")).toBeTruthy());
   });
 });
