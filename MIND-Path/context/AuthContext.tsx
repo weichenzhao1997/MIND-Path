@@ -45,6 +45,8 @@ type StoredAppointment = {
   when: string;
   startAt?: string | null;
   notes?: string | null;
+  calendarEventId?: string | null;
+  calendarId?: string | null;
 };
 
 type CreateAccountPayload = StoredUserProfile & {

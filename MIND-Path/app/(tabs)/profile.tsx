@@ -10,6 +10,8 @@ import {
   Linking,
   Switch,
   Platform,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from "react-native";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import * as Calendar from "expo-calendar";
@@ -43,6 +45,8 @@ type Appointment = {
   when: string;
   startAt?: string;
   notes?: string;
+  calendarEventId?: string | null;
+  calendarId?: string | null;
 };
 
 /** ---------- Profile clinic card colors ---------- */
@@ -114,6 +118,7 @@ function ProfileContent() {
   const [syncCalendar, setSyncCalendar] = useState(false);
   const [editingAppointmentId, setEditingAppointmentId] = useState<string | null>(null);
   const [removingAppointmentKey, setRemovingAppointmentKey] = useState<string | null>(null);
+  const [providerLocationCache, setProviderLocationCache] = useState<Record<string, string>>({});
 
   const formatDateTime = useCallback((value: Date) => {
     try {
@@ -127,6 +132,24 @@ function ProfileContent() {
       return value.toISOString();
     }
   }, []);
+
+  const formatProviderLocation = useCallback(
+    (row: ProviderRow | null, address?: ProviderAddress | null) => {
+      if (!row) return "";
+      const parts = [
+        row.basic_name,
+        address?.address_1,
+        address?.address_2,
+        address?.city ?? row.city,
+        address?.state ?? row.state,
+        address?.postal_code,
+      ]
+        .map(part => (part ? String(part).trim() : ""))
+        .filter(Boolean);
+      return parts.join(", ");
+    },
+    []
+  );
 
   useEffect(() => {
     if (normalizedResourceIds.length === 0) {
@@ -295,6 +318,57 @@ function ProfileContent() {
     });
   }, []);
 
+  const resolveProviderLocation = useCallback(
+    async (row: ProviderRow): Promise<string> => {
+      const providerId =
+        typeof row.provider_id === "number" && Number.isFinite(row.provider_id)
+          ? row.provider_id.toString()
+          : null;
+      if (providerId && providerLocationCache[providerId]) {
+        return providerLocationCache[providerId];
+      }
+
+      let location = formatProviderLocation(row);
+      if (providerId) {
+        try {
+          const address = await fetchProviderAddress(Number(providerId));
+          location = formatProviderLocation(row, address) || location;
+          if (location) {
+            setProviderLocationCache(prev => ({ ...prev, [providerId]: location }));
+          }
+        } catch (error) {
+          console.warn("Failed to fetch provider address for maps", error);
+        }
+      }
+      return location;
+    },
+    [formatProviderLocation, providerLocationCache]
+  );
+
+  const openProviderDirections = useCallback(
+    async (row: ProviderRow) => {
+      const location = await resolveProviderLocation(row);
+      if (!location) return;
+      const query = encodeURIComponent(location);
+      const url =
+        Platform.OS === "ios"
+          ? `http://maps.apple.com/?q=${query}`
+          : `https://www.google.com/maps/search/?api=1&query=${query}`;
+      Linking.openURL(url).catch(error => {
+        console.warn("Failed to open maps", error);
+      });
+    },
+    [resolveProviderLocation]
+  );
+
+  const callProvider = useCallback((row: ProviderRow) => {
+    const phone = row.phone?.replace(/[^\d+]/g, "");
+    if (!phone) return;
+    Linking.openURL(`tel:${phone}`).catch(error => {
+      console.warn("Failed to start call", error);
+    });
+  }, []);
+
   const closeAppointmentModal = () => {
     setAppointmentModalProvider(null);
     setAppointmentTitle("");
@@ -322,7 +396,7 @@ function ProfileContent() {
     setAppointmentDate(appt.startAt ? new Date(appt.startAt) : new Date());
     setAppointmentDateText(Platform.OS === "web" ? appt.when : "");
     setShowDatePicker(false);
-    setSyncCalendar(false);
+    setSyncCalendar(!!appt.calendarEventId);
     setEditingAppointmentId(appt.id);
     setRemovingAppointmentKey(null);
   };
@@ -361,6 +435,10 @@ function ProfileContent() {
         ? appointmentDateText.trim() || formatDateTime(appointmentDate)
         : formatDateTime(appointmentDate);
     const notes = appointmentNotes.trim();
+    const existing =
+      editingAppointmentId && providerId
+        ? (appointmentsByProvider[providerId] ?? []).find(item => item.id === editingAppointmentId) ?? null
+        : null;
     let providerLocation = appointmentModalProvider
       ? [
           appointmentModalProvider.basic_name,
@@ -371,45 +449,84 @@ function ProfileContent() {
           .join(", ")
       : "";
 
+    let calendarEventId = existing?.calendarEventId ?? null;
+    let calendarIdForEvent = existing?.calendarId ?? null;
+
     if (syncCalendar && Platform.OS !== "web") {
       try {
         const granted = await ensureCalendarPermission();
         if (granted) {
-          const calendarId = await getCalendarId();
-          if (calendarId) {
-            const startDate = appointmentDate;
-            const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
-            if (appointmentModalProvider?.provider_id != null) {
-              try {
-                const address: ProviderAddress | null = await fetchProviderAddress(
-                  appointmentModalProvider.provider_id
-                );
-                if (address) {
-                  const locationParts = [
-                    appointmentModalProvider.basic_name,
-                    address.address_1,
-                    address.address_2,
-                    address.city,
-                    address.state,
-                    address.postal_code,
-                  ]
-                    .map(part => (part ? String(part).trim() : ""))
-                    .filter(Boolean);
-                  if (locationParts.length > 0) {
-                    providerLocation = locationParts.join(", ");
-                  }
+          const startDate = appointmentDate;
+          const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+
+          if (appointmentModalProvider?.provider_id != null) {
+            try {
+              const address: ProviderAddress | null = await fetchProviderAddress(
+                appointmentModalProvider.provider_id
+              );
+              if (address) {
+                const locationParts = [
+                  appointmentModalProvider.basic_name,
+                  address.address_1,
+                  address.address_2,
+                  address.city,
+                  address.state,
+                  address.postal_code,
+                ]
+                  .map(part => (part ? String(part).trim() : ""))
+                  .filter(Boolean);
+                if (locationParts.length > 0) {
+                  providerLocation = locationParts.join(", ");
                 }
-              } catch (error) {
-                console.warn("Failed to fetch provider address", error);
+              }
+            } catch (error) {
+              console.warn("Failed to fetch provider address", error);
+            }
+          }
+
+          const eventPayload = {
+            title,
+            startDate,
+            endDate,
+            location: providerLocation || undefined,
+            notes: notes || undefined,
+          };
+
+          try {
+            if (calendarEventId) {
+              try {
+                const existingEvent: any = await Calendar.getEventAsync(calendarEventId);
+                const targetCalendarId =
+                  existingEvent?.calendarId ?? calendarIdForEvent ?? (await getCalendarId());
+                await Calendar.updateEventAsync(calendarEventId, eventPayload);
+                calendarIdForEvent = targetCalendarId ?? calendarIdForEvent;
+              } catch {
+                const targetCalendarId = calendarIdForEvent ?? (await getCalendarId());
+                if (targetCalendarId) {
+                  calendarEventId = await Calendar.createEventAsync(targetCalendarId, {
+                    ...eventPayload,
+                  });
+                  calendarIdForEvent = targetCalendarId;
+                }
+              }
+            } else {
+              const targetCalendarId = calendarIdForEvent ?? (await getCalendarId());
+              if (targetCalendarId) {
+                calendarEventId = await Calendar.createEventAsync(targetCalendarId, {
+                  ...eventPayload,
+                });
+                calendarIdForEvent = targetCalendarId;
               }
             }
-            await Calendar.createEventAsync(calendarId, {
-              title,
-              startDate,
-              endDate,
-              location: providerLocation || undefined,
-              notes: notes || undefined,
-            });
+          } catch (error) {
+            console.warn("Calendar event update failed, trying recreate", error);
+            const targetCalendarId = calendarIdForEvent ?? (await getCalendarId());
+            if (targetCalendarId) {
+              calendarEventId = await Calendar.createEventAsync(targetCalendarId, {
+                ...eventPayload,
+              });
+              calendarIdForEvent = targetCalendarId;
+            }
           }
         }
       } catch (error) {
@@ -417,39 +534,51 @@ function ProfileContent() {
       }
     }
 
-    setAppointmentsByProvider(prev => {
-      const nextList = prev[providerId] ?? [];
-      const next: Appointment = {
-        id: editingAppointmentId ?? `${providerId}-${Date.now()}`,
-        title,
-        when,
-        startAt: appointmentDate.toISOString(),
-        notes: notes || undefined,
-      };
+    const currentMap = appointmentsByProvider;
+    const nextList = currentMap[providerId] ?? [];
+    const next: Appointment = {
+      id: editingAppointmentId ?? `${providerId}-${Date.now()}`,
+      title,
+      when,
+      startAt: appointmentDate.toISOString(),
+      notes: notes || undefined,
+      calendarEventId: syncCalendar ? calendarEventId : null,
+      calendarId: syncCalendar ? calendarIdForEvent : null,
+    };
 
-      const updatedList = editingAppointmentId
-        ? nextList.some(item => item.id === editingAppointmentId)
-          ? nextList.map(item => (item.id === editingAppointmentId ? next : item))
-          : [next, ...nextList]
+    const updatedList =
+      editingAppointmentId && nextList.some(item => item.id === editingAppointmentId)
+        ? nextList.map(item => (item.id === editingAppointmentId ? next : item))
         : [next, ...nextList];
 
-      const nextMap = { ...prev, [providerId]: updatedList };
-      void updateProfile({ appointmentsByProvider: nextMap });
-      return nextMap;
-    });
+    const nextMap = { ...currentMap, [providerId]: updatedList };
+    setAppointmentsByProvider(nextMap);
+    void updateProfile({ appointmentsByProvider: nextMap });
     closeAppointmentModal();
   };
 
   const handleRemoveAppointment = (providerKey: string, appointmentId: string) => {
     const removalKey = `${providerKey}::${appointmentId}`;
     setRemovingAppointmentKey(removalKey);
-    setAppointmentsByProvider(prev => {
-      const list = prev[providerKey] ?? [];
-      const filtered = list.filter(item => item.id !== appointmentId);
-      const nextMap = { ...prev, [providerKey]: filtered };
-      void updateProfile({ appointmentsByProvider: nextMap });
-      return nextMap;
-    });
+    const list = appointmentsByProvider[providerKey] ?? [];
+    const target = list.find(item => item.id === appointmentId);
+
+    const removeFromCalendar = async () => {
+      if (Platform.OS === "web") return;
+      const eventId = target?.calendarEventId;
+      if (!eventId) return;
+      try {
+        await Calendar.deleteEventAsync(eventId, { futureEvents: false });
+      } catch (error) {
+        console.warn("Failed to delete calendar event", error);
+      }
+    };
+
+    const filtered = list.filter(item => item.id !== appointmentId);
+    const nextMap = { ...appointmentsByProvider, [providerKey]: filtered };
+    setAppointmentsByProvider(nextMap);
+    void updateProfile({ appointmentsByProvider: nextMap });
+    void removeFromCalendar();
     setRemovingAppointmentKey(null);
   };
 
@@ -798,15 +927,36 @@ function ProfileContent() {
                     </View>
                   ) : null}
                 </View>
-                <Pressable
-                  style={styles.apptBtn}
-                  accessibilityRole="button"
-                  onPress={() => openAddAppointment(row)}
-                >
-                  <Text style={styles.apptBtnText}>
-                    Add appointment
-                  </Text>
-                </Pressable>
+                <View style={styles.providerActionRow}>
+                  <Pressable
+                    style={[styles.actionBtn, styles.primaryActionBtn]}
+                    accessibilityRole="button"
+                    onPress={() => openAddAppointment(row)}
+                  >
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.actionBtnText, styles.actionBtnTextPrimary]}
+                    >
+                      Add appointment
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.actionBtn, styles.secondaryActionBtn]}
+                    accessibilityRole="button"
+                    onPress={() => openProviderDirections(row)}
+                  >
+                    <Text numberOfLines={1} style={styles.actionBtnText}>Directions</Text>
+                  </Pressable>
+                  {row.phone ? (
+                    <Pressable
+                      style={[styles.actionBtn, styles.secondaryActionBtn]}
+                      accessibilityRole="button"
+                      onPress={() => callProvider(row)}
+                    >
+                      <Text numberOfLines={1} style={styles.actionBtnText}>Call</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
               </View>
             );
           })
@@ -820,7 +970,8 @@ function ProfileContent() {
           <Text style={styles.logoutText}>Log out</Text>
         </Pressable>
       </ScrollView>
-      {appointmentModalProvider ? (
+{appointmentModalProvider ? (
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
         <View style={styles.modalOverlay} pointerEvents="auto">
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Edit appointment</Text>
@@ -929,6 +1080,7 @@ function ProfileContent() {
             </View>
           </View>
         </View>
+      </TouchableWithoutFeedback>
       ) : null}
     </SafeAreaView>
   );
@@ -1121,6 +1273,40 @@ const styles = StyleSheet.create({
   apptBtnText: {
     color: GREEN_TEXT,
     fontWeight: "700",
+  },
+  providerActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 10,
+  },
+  actionBtn: {
+    flexShrink: 0,
+    backgroundColor: GREEN_LIGHT,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    minHeight: 46,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: GREEN_BORDER,
+  },
+  secondaryActionBtn: {
+    backgroundColor: "#ffffff",
+  },
+  primaryActionBtn: {
+    backgroundColor: GREEN_LIGHT,
+    borderColor: GREEN_BORDER,
+  },
+  actionBtnText: {
+    color: GREEN_TEXT,
+    fontWeight: "500",
+    letterSpacing: 0.2,
+  },
+  actionBtnTextPrimary: {
+    color: GREEN_TEXT,
+    fontWeight: "500",
   },
   appointmentList: {
     gap: 8,
