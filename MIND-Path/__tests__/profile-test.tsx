@@ -145,35 +145,19 @@ describe("<ProfileScreen />", () => {
     });
   });
 
-  test("shows profile data, including zipcode inline", async () => {
+  test("shows profile data sections", async () => {
     const utils = render(<ProfileScreen />);
 
     await waitFor(() => {
       expect(fetchProvidersByIdsMock).toHaveBeenCalledWith([123]);
       expect(fetchResourcesByIdsMock).toHaveBeenCalledWith(["res-1"]);
       expect(utils.getByText("Previous chats / Resources")).toBeTruthy();
-      expect(utils.getByText(/Near by Me/)).toBeTruthy();
-      expect(utils.getByText(/90210/)).toBeTruthy();
       expect(utils.getByText("chat-1")).toBeTruthy();
       expect(utils.getByText("Calm Breathing Guide")).toBeTruthy();
       expect(utils.getByText("Mindful Clinic")).toBeTruthy();
       expect(utils.getByText("Los Angeles, CA")).toBeTruthy();
       expect(utils.getByText("Phone: 123-456-7890")).toBeTruthy();
     });
-  });
-
-  test("opens zipcode editor and saves changes", async () => {
-    const { getAllByText, getByPlaceholderText, getByText } = render(<ProfileScreen />);
-
-    fireEvent.press(getAllByText("Edit")[1]);
-
-    const zipInput = getByPlaceholderText("Enter zipcode");
-    fireEvent.changeText(zipInput, "10001");
-    fireEvent.press(getByText("Save"));
-
-    await waitFor(() =>
-      expect(updateProfileMock).toHaveBeenCalledWith({ zipcode: "10001" })
-    );
   });
 
   test("logs out when button pressed", async () => {
@@ -240,6 +224,24 @@ describe("<ProfileScreen />", () => {
     await waitFor(() =>
       expect(updateProfileMock).toHaveBeenCalledWith({ clinicIds: [] })
     );
+  });
+
+  test("shows empty saved resources state when ids resolve to nothing", async () => {
+    useAuthMock.mockReturnValue({
+      isLoggedIn: true,
+      profile: { ...mockProfile, recommendedResourceIds: ["ghost-id"] },
+      logOut: logOutMock,
+      updateProfile: updateProfileMock,
+    });
+
+    fetchResourcesByIdsMock.mockResolvedValueOnce([]);
+
+    const utils = render(<ProfileScreen />);
+
+    await waitFor(() => {
+      expect(fetchResourcesByIdsMock).toHaveBeenCalledWith(["ghost-id"]);
+      expect(utils.getByText("No resources saved yet.")).toBeTruthy();
+    });
   });
 
   test("tapping a saved resource opens its URL without toggling selection", async () => {

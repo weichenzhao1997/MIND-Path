@@ -5,7 +5,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   ActivityIndicator,
   Linking,
 } from "react-native";
@@ -24,7 +23,6 @@ import {
 /** ---------- Theme colors ---------- */
 const GREEN_MAIN = "#3F9360";
 const GREEN_LIGHT = "#DDEFE6";
-const GREEN_LIGHT_ALT = "#CFE7DB"; // slightly deeper than GREEN_LIGHT
 const GREEN_BORDER = "rgba(6,95,70,0.14)";
 const GREEN_TEXT = "#065F46";
 const PLACEHOLDER = "#3a6a54";
@@ -53,7 +51,6 @@ function ProfileContent() {
     previousChatSessionIds,
     recommendedResourceIds,
     clinicIds,
-    zipcode,
     username,
   } = safeProfile;
 
@@ -72,14 +69,10 @@ function ProfileContent() {
   const [resourceEditMode, setResourceEditMode] = useState(false);
 
   const displayName = username || "Guest Explorer";
-  const zipcodeDisplay = zipcode || "Zipcode not provided";
 
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const togglePick = (key: string) =>
     setPicked(prev => ({ ...prev, [key]: !prev[key] }));
-
-  const [editingZip, setEditingZip] = useState(false);
-  const [pendingZip, setPendingZip] = useState(zipcode);
 
   const clinicIdNumbers = useMemo(
     () =>
@@ -245,21 +238,9 @@ function ProfileContent() {
     setClinicEditMode(prev => !prev);
   }, []);
 
-  const beginEditingZip = useCallback(() => {
-    setPendingZip(zipcode);
-    setEditingZip(true);
-  }, [zipcode]);
-
-  const handleZipSave = async () => {
-    const trimmed = pendingZip.trim();
-    await updateProfile({ zipcode: trimmed });
-    setEditingZip(false);
-  };
-
-  const handleZipCancel = () => {
-    setPendingZip(zipcode);
-    setEditingZip(false);
-  };
+  const noSavedResources =
+    normalizedResourceIds.length === 0 ||
+    (!resourceLoading && !resourceError && resourceRows.length === 0);
 
   const openResourceUrl = useCallback((resource?: Resource | null) => {
     const raw = resource?.url?.trim();
@@ -368,9 +349,7 @@ function ProfileContent() {
               <View style={styles.choiceColumnHeaderRow}>
                 <Text style={styles.choiceColumnTitle}>Saved resources</Text>
               </View>
-              {normalizedResourceIds.length === 0 ? (
-                <Text style={styles.emptyText}>No resources saved yet.</Text>
-              ) : resourceLoading ? (
+              {resourceLoading ? (
                 <View style={styles.resourceStatusRow}>
                   <ActivityIndicator color={GREEN_TEXT} size="small" />
                   <Text style={styles.resourceStatusText}>
@@ -381,10 +360,8 @@ function ProfileContent() {
                 <Text style={styles.resourceErrorText}>
                   Unable to load saved resources. {resourceError}
                 </Text>
-              ) : resourceRows.length === 0 ? (
-                <Text style={styles.emptyText}>
-                  We could not find these resources in the MIND-Path library.
-                </Text>
+              ) : noSavedResources ? (
+                <Text style={styles.emptyText}>No resources saved yet.</Text>
               ) : (
                 resourceRows.map(row => {
                   const key = row.id;
@@ -468,49 +445,6 @@ function ProfileContent() {
           <View style={styles.profileTopDecor} />
         </View>
 
-        <View style={styles.nearbyHeader}>
-          <Text style={styles.nearbyTitle}>
-            Near by Me
-            <Text style={styles.nearbyChevron}> ▾ </Text>
-            <Text style={styles.nearbyZip}> {zipcodeDisplay} </Text>
-          </Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={beginEditingZip}
-            style={styles.zipEditIcon}
-          >
-            <Text style={styles.nearbyZip}>Edit</Text>
-          </Pressable>
-        </View>
-        {editingZip && (
-          <View style={styles.zipEditRow}>
-            <TextInput
-              value={pendingZip}
-              onChangeText={setPendingZip}
-              placeholder="Enter zipcode"
-              placeholderTextColor={PLACEHOLDER}
-              keyboardType="number-pad"
-              style={styles.zipInput}
-              maxLength={10}
-            />
-            <Pressable
-              accessibilityRole="button"
-              onPress={handleZipSave}
-              style={styles.zipActionBtn}
-            >
-              <Text style={styles.zipActionText}>Save</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={handleZipCancel}
-              style={[styles.zipActionBtn, styles.zipCancelBtn]}
-            >
-              <Text style={[styles.zipActionText, styles.zipCancelText]}>
-                Cancel
-              </Text>
-            </Pressable>
-          </View>
-        )}
 
         {/* Saved clinics */}
         <View style={[styles.sectionHeaderRow, styles.savedClinicHeader]}>
@@ -743,53 +677,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     textAlign: "center",
   },
-
-  zipEditRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 2,
-    marginBottom: 12,
-  },
-  zipInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: GREEN_BORDER,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: "#111827",
-    backgroundColor: GREEN_LIGHT_ALT,
-  },
-  zipActionBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    backgroundColor: GREEN_LIGHT,
-    borderWidth: 1,
-    borderColor: GREEN_BORDER,
-  },
-  zipActionText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: GREEN_TEXT,
-  },
-  zipCancelBtn: {
-    backgroundColor: "#ffffff",
-  },
-  zipCancelText: {
-    color: PLACEHOLDER,
-  },
-  zipEditIcon: {
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  editIconText: {
-    fontSize: 16,
-  },
-
-  /** Clinic cards */
+/** Clinic cards */
   clinicCard: {
     backgroundColor: PEACH_LIGHT,
     borderRadius: 18,
@@ -984,31 +872,6 @@ const styles = StyleSheet.create({
   resourceErrorText: {
     fontSize: 12,
     color: "#b91c1c",
-  },
-
-  /** Nearby section */
-  nearbyHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 6,
-    paddingHorizontal: 2,
-    marginBottom: 8,
-  },
-  nearbyTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#5c4235",
-  },
-  nearbyZip: {
-    fontSize: 14,
-    color: PLACEHOLDER,
-    fontWeight: "600",
-  },
-  nearbyChevron: {
-    marginLeft: 6,
-    fontSize: 14,
-    color: "#97877d",
   },
 
   /** Shared header */
