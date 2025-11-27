@@ -8,6 +8,7 @@ import {
   afterEach,
 } from "@jest/globals";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
+import { Linking } from "react-native";
 import ProfileScreen from "@/app/(tabs)/profile";
 import { useAuth } from "@/context/AuthContext";
 import { useSegments } from "expo-router";
@@ -61,6 +62,7 @@ describe("<ProfileScreen />", () => {
   let logOutMock: jest.Mock;
   let updateProfileMock: jest.Mock;
   let consoleErrorSpy: jest.SpyInstance;
+  let openUrlSpy: jest.SpyInstance;
 
   beforeEach(() => {
     logOutMock = jest.fn();
@@ -104,11 +106,13 @@ describe("<ProfileScreen />", () => {
       },
     ]);
     consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    openUrlSpy = jest.spyOn(Linking, "openURL").mockResolvedValue(undefined as any);
   });
 
   afterEach(() => {
     jest.clearAllMocks();
     consoleErrorSpy.mockRestore();
+    openUrlSpy.mockRestore();
     useSegmentsMock.mockReset();
     fetchProvidersByIdsMock.mockReset();
     fetchResourcesByIdsMock.mockReset();
@@ -236,5 +240,39 @@ describe("<ProfileScreen />", () => {
     await waitFor(() =>
       expect(updateProfileMock).toHaveBeenCalledWith({ clinicIds: [] })
     );
+  });
+
+  test("tapping a saved resource opens its URL without toggling selection", async () => {
+    fetchResourcesByIdsMock.mockResolvedValueOnce([
+      { id: "res-1", title: "Calm Breathing Guide", type: "article", org: "Mindful Org", url: "example.com" },
+    ]);
+
+    const utils = render(<ProfileScreen />);
+
+    await waitFor(() => {
+      expect(utils.getByText("Calm Breathing Guide")).toBeTruthy();
+    });
+
+    const resourceText = utils.getByText("Calm Breathing Guide");
+    const resourceCard =
+      (resourceText.parent as any)?.props?.onPress
+        ? (resourceText.parent as any)
+        : (resourceText.parent as any)?.parent ?? resourceText;
+    const initialBg =
+      Array.isArray(resourceCard?.props?.style) && resourceCard.props.style[1]
+        ? resourceCard.props.style[1].backgroundColor
+        : null;
+
+    fireEvent.press(resourceCard);
+
+    await waitFor(() =>
+      expect(openUrlSpy).toHaveBeenCalledWith("https://example.com")
+    );
+
+    const updatedBg =
+      Array.isArray(resourceCard?.props?.style) && resourceCard.props.style[1]
+        ? resourceCard.props.style[1].backgroundColor
+        : null;
+    expect(updatedBg).toBe(initialBg);
   });
 });

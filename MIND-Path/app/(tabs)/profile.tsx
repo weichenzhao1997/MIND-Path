@@ -7,6 +7,7 @@ import {
   StyleSheet,
   TextInput,
   ActivityIndicator,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
@@ -27,6 +28,9 @@ const GREEN_LIGHT_ALT = "#CFE7DB"; // slightly deeper than GREEN_LIGHT
 const GREEN_BORDER = "rgba(6,95,70,0.14)";
 const GREEN_TEXT = "#065F46";
 const PLACEHOLDER = "#3a6a54";
+
+const ensureHttp = (url: string) =>
+  /^https?:\/\//i.test(url) ? url : `https://${url}`;
 
 /** ---------- Profile clinic card colors ---------- */
 const PEACH_LIGHT = "#FEF3E7";
@@ -257,6 +261,15 @@ function ProfileContent() {
     setEditingZip(false);
   };
 
+  const openResourceUrl = useCallback((resource?: Resource | null) => {
+    const raw = resource?.url?.trim();
+    if (!raw) return;
+    const target = ensureHttp(raw);
+    Linking.openURL(target).catch(error => {
+      console.warn("Failed to open resource URL", error);
+    });
+  }, []);
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#f3f4f6" }}>
       <ScrollView
@@ -378,23 +391,19 @@ function ProfileContent() {
                   if (!key) {
                     return null;
                   }
-                  const isSelected = !!picked[key];
                   if (resourceEditMode) {
                     const removingThisResource = removingResourceId === key;
                     return (
                       <View key={key} style={styles.savedResourceBlock}>
                         <Pressable
                           accessibilityRole="button"
-                          onPress={() => togglePick(key)}
                           style={[
                             styles.choiceItem,
                             styles.savedChoice,
                             {
-                              backgroundColor: isSelected
-                                ? "#ffffff"
-                                : GREEN_LIGHT,
-                              borderWidth: isSelected ? 1 : 0,
-                              borderColor: isSelected ? "#cbd5e1" : "transparent",
+                              backgroundColor: GREEN_LIGHT,
+                              borderWidth: 0,
+                              borderColor: "transparent",
                             },
                           ]}
                         >
@@ -430,15 +439,13 @@ function ProfileContent() {
                     <Pressable
                       key={key}
                       accessibilityRole="button"
-                      onPress={() => togglePick(key)}
+                      onPress={() => openResourceUrl(row)}
                       style={[
                         styles.choiceItem,
                         {
-                          backgroundColor: isSelected
-                            ? "#ffffff"
-                            : GREEN_LIGHT,
-                          borderWidth: isSelected ? 1 : 0,
-                          borderColor: isSelected ? "#cbd5e1" : "transparent",
+                          backgroundColor: GREEN_LIGHT,
+                          borderWidth: 0,
+                          borderColor: "transparent",
                         },
                       ]}
                     >
