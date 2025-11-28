@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import * as Calendar from "expo-calendar";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import LoginScreen from "./login";
 import {
@@ -64,6 +64,7 @@ const EMPTY_PROFILE = {
 
 function ProfileContent() {
   const { logOut, profile, updateProfile } = useAuth();
+  const insets = useSafeAreaInsets();
   const safeProfile = useMemo(() => profile ?? EMPTY_PROFILE, [profile]);
 
   const {
@@ -583,15 +584,16 @@ function ProfileContent() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#f3f4f6" }}>
+    <SafeAreaProvider style={{ flex: 1, backgroundColor: "#f3f4f6" }}>
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{
           paddingHorizontal: 16,
           paddingTop: 10,
-          paddingBottom: 32,
+          paddingBottom: 24 + insets.bottom,
         }}
         showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="automatic"
       >
         {/* Reuse shared header (avatar + bell) */}
         <View style={styles.header}>
@@ -1082,7 +1084,7 @@ function ProfileContent() {
         </View>
       </TouchableWithoutFeedback>
       ) : null}
-    </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
