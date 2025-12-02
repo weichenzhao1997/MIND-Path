@@ -356,7 +356,7 @@ export default function ResourcesContent() {
                           : isRemoving
                             ? "Removing..."
                             : isSaved
-                              ? "Saved — tap to remove"
+                              ? "Saved to profile"
                               : "Save to profile"}
                       </Text>
                       </Pressable>

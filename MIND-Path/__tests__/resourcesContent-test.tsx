@@ -123,7 +123,7 @@ describe("<ResourcesContent />", () => {
 
     const utils = await triggerSearch("anxiety");
 
-    fireEvent.press(utils.getByText(/Saved .*tap to remove/));
+    fireEvent.press(utils.getByText("Saved to profile"));
 
     await waitFor(() =>
       expect(updateProfileMock).toHaveBeenCalledWith({
